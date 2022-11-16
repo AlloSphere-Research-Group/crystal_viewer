@@ -34,7 +34,6 @@
  */
 
 #include <memory>
-#include <variant>
 #include <vector>
 
 #include "al/graphics/al_Graphics.hpp"
