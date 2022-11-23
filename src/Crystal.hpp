@@ -92,7 +92,7 @@ template <int N> struct Lattice : LatticeBase {
       int oldDim = oldLattice->dim;
 
       if (oldDim == 3) {
-        auto oldLatticePtr = std::dynamic_pointer_cast<Lattice3>(oldLattice);
+        auto oldLatticePtr = std::dynamic_pointer_cast<Lattice<3>>(oldLattice);
         for (int i = 0; i < dim; ++i) {
           Vec<N, float> newVec(0);
           if (i < oldDim) {
@@ -105,7 +105,7 @@ template <int N> struct Lattice : LatticeBase {
           basis.push_back(newVec);
         }
       } else if (oldDim == 4) {
-        auto oldLatticePtr = std::dynamic_pointer_cast<Lattice4>(oldLattice);
+        auto oldLatticePtr = std::dynamic_pointer_cast<Lattice<4>>(oldLattice);
         for (int i = 0; i < dim; ++i) {
           Vec<N, float> newVec(0);
           if (i < oldDim) {
@@ -118,7 +118,7 @@ template <int N> struct Lattice : LatticeBase {
           basis.push_back(newVec);
         }
       } else if (oldDim == 5) {
-        auto oldLatticePtr = std::dynamic_pointer_cast<Lattice5>(oldLattice);
+        auto oldLatticePtr = std::dynamic_pointer_cast<Lattice<5>>(oldLattice);
         for (int i = 0; i < dim; ++i) {
           Vec<N, float> newVec(0);
           if (i < oldDim) {
