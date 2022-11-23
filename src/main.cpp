@@ -13,67 +13,218 @@ using namespace al;
 struct MyApp : App {
   CrystalViewer viewer;
 
-  ParameterInt dimension{"dimension", "", 3, 3, 5};
+  ParameterBool showLattice{"showLattice", "", 1};
+  ParameterInt latticeDim{"latticeDim", "", 3, 3, 5};
+  ParameterInt latticeSize{"latticeSize", "", 3, 1, 5};
 
-  Parameter l1{"l1", "", 0, -5, 5};
-  Parameter l2{"l2", "", 0, -5, 5};
-  Parameter l3{"l3", "", 0, -5, 5};
+  ParameterInt basisNum{"basisNum", "", 0, 0, 2};
+  Parameter basis1{"basis1", "", 1, -5, 5};
+  Parameter basis2{"basis2", "", 0, -5, 5};
+  Parameter basis3{"basis3", "", 0, -5, 5};
+  Parameter basis4{"basis4", "", 0, -5, 5};
+  Parameter basis5{"basis5", "", 0, -5, 5};
 
-  Parameter m1{"m1", "", 1, -2, 2};
-  Parameter m2{"m2", "", 0, -2, 2};
-  Parameter m3{"m3", "", 0, -2, 2};
+  ParameterBool showSlice{"showSlice", "", 1};
+  ParameterInt sliceDim{"sliceDim", "", 2, 2, 2};
 
-  Parameter windowSize{"windowSize", "", 0, 0, 10.f};
+  ParameterInt millerNum{"millerNum", "", 0, 0, 0};
+  ParameterBool intMiller{"intMiller", ""};
+  Parameter miller1{"miller1", "", 1, -4, 4};
+  Parameter miller2{"miller2", "", 0, -4, 4};
+  Parameter miller3{"miller3", "", 0, -4, 4};
+  Parameter miller4{"miller4", "", 0, -4, 4};
+  Parameter miller5{"miller5", "", 0, -4, 4};
 
-  bool showLattice{true};
+  ParameterBool showBox{"showBox", "", 0};
+  Parameter windowDepth{"windowDepth", "", 0, 0, 10.f};
 
   void onCreate() override {
-    lens().near(0.1).far(25).fovy(45);
+    lens().near(0.1).far(100).fovy(45);
     nav().pos(0, 0, 4);
 
     viewer.init();
-    viewer.generate();
+    viewer.generate(latticeDim.get());
 
-    viewer.slice->update(m1.get(), m2.get(), m3.get(), windowSize.get());
+    readBasis(basisNum.get());
 
-    /*auto guiDomain = GUIDomain::enableGUI(defaultWindowDomain());
-    gui = &guiDomain->newGUI();
-    *gui << m1 << m2 << m3 << windowSize;*/
+    viewer.updateSlice(millerNum.get(), miller1.get(), miller2.get(),
+                       miller3.get(), miller4.get(), miller5.get(),
+                       windowDepth.get());
 
-    m1.registerChangeCallback([&](float value) {
-      viewer.slice->update(value, m2.get(), m3.get(), windowSize.get());
+    latticeDim.registerChangeCallback([&](int value) {
+      basisNum.max(value - 1);
+      if (basisNum.get() > value - 1) {
+        basisNum.set(value - 1);
+      }
+      sliceDim.max(value - 1);
+      if (sliceDim.get() > value - 1) {
+        sliceDim.set(value - 1);
+      }
+      millerNum.max(value - sliceDim.get() - 1);
+      if (millerNum.get() > value - sliceDim.get() - 1) {
+        millerNum.set(value - sliceDim.get() - 1);
+      }
+
+      viewer.generate(value);
+      viewer.updateSlice(millerNum.get(), miller1.get(), miller2.get(),
+                         miller3.get(), miller4.get(), miller5.get(),
+                         windowDepth.get());
     });
 
-    m2.registerChangeCallback([&](float value) {
-      viewer.slice->update(m1.get(), value, m3.get(), windowSize.get());
+    latticeSize.registerChangeCallback([&](int value) {
+      viewer.createLattice(value);
+      viewer.updateSlice(millerNum.get(), miller1.get(), miller2.get(),
+                         miller3.get(), miller4.get(), miller5.get(),
+                         windowDepth.get());
     });
 
-    m3.registerChangeCallback([&](float value) {
-      viewer.slice->update(m1.get(), m2.get(), value, windowSize.get());
+    basisNum.registerChangeCallback([&](int value) { readBasis(value); });
+
+    basis1.registerChangeCallback(
+        [&](float value) { viewer.setBasis(value, basisNum.get(), 0); });
+
+    basis2.registerChangeCallback(
+        [&](float value) { viewer.setBasis(value, basisNum.get(), 1); });
+
+    basis3.registerChangeCallback(
+        [&](float value) { viewer.setBasis(value, basisNum.get(), 2); });
+
+    basis4.registerChangeCallback(
+        [&](float value) { viewer.setBasis(value, basisNum.get(), 3); });
+
+    basis5.registerChangeCallback(
+        [&](float value) { viewer.setBasis(value, basisNum.get(), 4); });
+
+    sliceDim.registerChangeCallback([&](int value) {
+      millerNum.max(latticeDim.get() - value - 1);
+      if (millerNum.get() > latticeDim.get() - value - 1) {
+        millerNum.set(latticeDim.get() - value - 1);
+      }
     });
 
-    windowSize.registerChangeCallback([&](float value) {
-      viewer.slice->update(m1.get(), m2.get(), m3.get(), value);
+    intMiller.registerChangeCallback([&](float value) {
+      if (value) {
+        miller1.setHint("input", -1);
+        miller2.setHint("input", -1);
+        miller3.setHint("input", -1);
+        miller4.setHint("input", -1);
+        miller5.setHint("input", -1);
+      } else {
+        miller1.removeHint("input");
+        miller2.removeHint("input");
+        miller3.removeHint("input");
+        miller4.removeHint("input");
+        miller5.removeHint("input");
+      }
+    });
+
+    millerNum.registerChangeCallback([&](int value) {
+      viewer.updateSlice(value, miller1.get(), miller2.get(), miller3.get(),
+                         miller4.get(), miller5.get(), windowDepth.get());
+    });
+
+    miller1.registerChangeCallback([&](float value) {
+      viewer.updateSlice(millerNum.get(), value, miller2.get(), miller3.get(),
+                         miller4.get(), miller5.get(), windowDepth.get());
+    });
+
+    miller2.registerChangeCallback([&](float value) {
+      viewer.updateSlice(millerNum.get(), miller1.get(), value, miller3.get(),
+                         miller4.get(), miller5.get(), windowDepth.get());
+    });
+
+    miller3.registerChangeCallback([&](float value) {
+      viewer.updateSlice(millerNum.get(), miller1.get(), miller2.get(), value,
+                         miller4.get(), miller5.get(), windowDepth.get());
+    });
+
+    miller4.registerChangeCallback([&](float value) {
+      viewer.updateSlice(millerNum.get(), miller1.get(), miller2.get(),
+                         miller3.get(), value, miller5.get(),
+                         windowDepth.get());
+    });
+
+    miller5.registerChangeCallback([&](float value) {
+      viewer.updateSlice(millerNum.get(), miller1.get(), miller2.get(),
+                         miller3.get(), miller4.get(), value,
+                         windowDepth.get());
+    });
+
+    windowDepth.registerChangeCallback([&](float value) {
+      viewer.updateSlice(millerNum.get(), miller1.get(), miller2.get(),
+                         miller3.get(), miller4.get(), miller5.get(), value);
     });
 
     // hasCapability(Capability::CAP_2DGUI)
     imguiInit();
   }
 
+  void readBasis(int basisNum) {
+    basis1.setNoCalls(viewer.getBasis(basisNum, 0));
+    basis2.setNoCalls(viewer.getBasis(basisNum, 1));
+    basis3.setNoCalls(viewer.getBasis(basisNum, 2));
+    if (viewer.dim > 3) {
+      basis4.setNoCalls(viewer.getBasis(basisNum, 3));
+      if (viewer.dim > 4) {
+        basis5.setNoCalls(viewer.getBasis(basisNum, 4));
+      }
+    }
+  }
+
   void onAnimate(double dt) override {
     // hasCapability(Capability::CAP_2DGUI)
     imguiBeginFrame();
     ImGui::Begin("Crystal");
-    ParameterGUI::draw(&dimension);
 
-    ParameterGUI::draw(&l1);
-    ParameterGUI::draw(&l2);
-    ParameterGUI::draw(&l3);
+    ParameterGUI::draw(&showLattice);
+    ParameterGUI::draw(&latticeDim);
+    ParameterGUI::draw(&latticeSize);
 
-    ParameterGUI::draw(&m1);
-    ParameterGUI::draw(&m2);
-    ParameterGUI::draw(&m3);
-    ParameterGUI::draw(&windowSize);
+    ImGui::NewLine();
+
+    if (ImGui::CollapsingHeader("Edit Basis Vector",
+                                ImGuiTreeNodeFlags_CollapsingHeader)) {
+      ParameterGUI::draw(&basisNum);
+      ImGui::Indent();
+      ParameterGUI::draw(&basis1);
+      ParameterGUI::draw(&basis2);
+      ParameterGUI::draw(&basis3);
+      if (latticeDim.get() > 3) {
+        ParameterGUI::draw(&basis4);
+        if (latticeDim.get() > 4) {
+          ParameterGUI::draw(&basis5);
+        }
+      }
+      ImGui::Unindent();
+    }
+
+    ImGui::NewLine();
+
+    ParameterGUI::draw(&showSlice);
+    if (showSlice.get()) {
+      ParameterGUI::draw(&sliceDim);
+
+      ImGui::NewLine();
+
+      ParameterGUI::draw(&millerNum);
+      ImGui::Indent();
+      ParameterGUI::draw(&intMiller);
+      ParameterGUI::draw(&miller1);
+      ParameterGUI::draw(&miller2);
+      ParameterGUI::draw(&miller3);
+      if (latticeDim.get() > 3) {
+        ParameterGUI::draw(&miller4);
+        if (latticeDim.get() > 4) {
+          ParameterGUI::draw(&miller5);
+        }
+      }
+      ImGui::Unindent();
+    }
+
+    ImGui::NewLine();
+
+    ParameterGUI::draw(&showBox);
+    ParameterGUI::draw(&windowDepth);
     ImGui::End();
     imguiEndFrame();
   }
@@ -85,37 +236,46 @@ struct MyApp : App {
     g.blending(true);
     g.blendAdd();
 
-    if (showLattice) {
+    if (showLattice.get()) {
       viewer.drawLattice(g);
     }
 
-    viewer.drawSlice(g);
+    if (showBox.get()) {
+      viewer.drawBox(g);
+    }
+
+    if (showSlice.get()) {
+      viewer.drawSlice(g);
+    }
 
     // hasCapability(Capability::CAP_2DGUI)
     imguiDraw();
   }
 
-  bool onKeyDown(const Keyboard &k) override {
+  /*bool onKeyDown(const Keyboard &k) override {
     switch (k.key()) {
     case ' ':
-      showLattice = !showLattice;
+      showLattice.set(!showLattice.get());
       break;
     case '3':
       viewer.generate(3);
-      viewer.slice->update(m1.get(), m2.get(), m3.get(), windowSize.get());
+      viewer.slice->update(miller1.get(), miller2.get(), miller3.get(),
+                           windowDepth.get());
       break;
     case '4':
       viewer.generate(4);
-      viewer.slice->update(m1.get(), m2.get(), m3.get(), windowSize.get());
+      viewer.slice->update(miller1.get(), miller2.get(), miller3.get(),
+                           windowDepth.get());
       break;
     case '5':
       viewer.generate(5);
-      viewer.slice->update(m1.get(), m2.get(), m3.get(), windowSize.get());
+      viewer.slice->update(miller1.get(), miller2.get(), miller3.get(),
+                           windowDepth.get());
       break;
     default:
       return false;
     }
-  }
+  }*/
 
   void onExit() {
     // hasCapability(Capability::CAP_2DGUI)
@@ -125,7 +285,7 @@ struct MyApp : App {
 
 int main() {
   MyApp app;
-  // app.dimensions(600, 400);
+  // app.dimensions(1200, 800);
   app.dimensions(1920, 1080);
   app.start();
 }
