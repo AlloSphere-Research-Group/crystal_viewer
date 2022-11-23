@@ -36,6 +36,7 @@ struct MyApp : App {
   Parameter miller5{"miller5", "", 0, -4, 4};
 
   ParameterBool showBox{"showBox", "", 0};
+  Parameter windowSize{"windowSize", "", 15.f, 0, 30.f};
   Parameter windowDepth{"windowDepth", "", 0, 0, 10.f};
 
   void onCreate() override {
@@ -44,12 +45,6 @@ struct MyApp : App {
 
     viewer.init();
     viewer.generate(latticeDim.get());
-
-    readBasis(basisNum.get());
-
-    viewer.updateSlice(millerNum.get(), miller1.get(), miller2.get(),
-                       miller3.get(), miller4.get(), miller5.get(),
-                       windowDepth.get());
 
     latticeDim.registerChangeCallback([&](int value) {
       basisNum.max(value - 1);
@@ -66,17 +61,10 @@ struct MyApp : App {
       }
 
       viewer.generate(value);
-      viewer.updateSlice(millerNum.get(), miller1.get(), miller2.get(),
-                         miller3.get(), miller4.get(), miller5.get(),
-                         windowDepth.get());
     });
 
-    latticeSize.registerChangeCallback([&](int value) {
-      viewer.createLattice(value);
-      viewer.updateSlice(millerNum.get(), miller1.get(), miller2.get(),
-                         miller3.get(), miller4.get(), miller5.get(),
-                         windowDepth.get());
-    });
+    latticeSize.registerChangeCallback(
+        [&](int value) { viewer.createLattice(value); });
 
     basisNum.registerChangeCallback([&](int value) { readBasis(value); });
 
@@ -100,6 +88,8 @@ struct MyApp : App {
       if (millerNum.get() > latticeDim.get() - value - 1) {
         millerNum.set(latticeDim.get() - value - 1);
       }
+
+      // TODO: add 3d slice transition
     });
 
     intMiller.registerChangeCallback([&](float value) {
@@ -118,42 +108,30 @@ struct MyApp : App {
       }
     });
 
-    millerNum.registerChangeCallback([&](int value) {
-      viewer.updateSlice(value, miller1.get(), miller2.get(), miller3.get(),
-                         miller4.get(), miller5.get(), windowDepth.get());
-    });
+    millerNum.registerChangeCallback([&](int value) { readMiller(value); });
 
-    miller1.registerChangeCallback([&](float value) {
-      viewer.updateSlice(millerNum.get(), value, miller2.get(), miller3.get(),
-                         miller4.get(), miller5.get(), windowDepth.get());
-    });
+    miller1.registerChangeCallback(
+        [&](float value) { viewer.setMiller(value, millerNum.get(), 0); });
 
-    miller2.registerChangeCallback([&](float value) {
-      viewer.updateSlice(millerNum.get(), miller1.get(), value, miller3.get(),
-                         miller4.get(), miller5.get(), windowDepth.get());
-    });
+    miller2.registerChangeCallback(
+        [&](float value) { viewer.setMiller(value, millerNum.get(), 1); });
 
-    miller3.registerChangeCallback([&](float value) {
-      viewer.updateSlice(millerNum.get(), miller1.get(), miller2.get(), value,
-                         miller4.get(), miller5.get(), windowDepth.get());
-    });
+    miller3.registerChangeCallback(
+        [&](float value) { viewer.setMiller(value, millerNum.get(), 2); });
 
-    miller4.registerChangeCallback([&](float value) {
-      viewer.updateSlice(millerNum.get(), miller1.get(), miller2.get(),
-                         miller3.get(), value, miller5.get(),
-                         windowDepth.get());
-    });
+    miller4.registerChangeCallback(
+        [&](float value) { viewer.setMiller(value, millerNum.get(), 3); });
 
-    miller5.registerChangeCallback([&](float value) {
-      viewer.updateSlice(millerNum.get(), miller1.get(), miller2.get(),
-                         miller3.get(), miller4.get(), value,
-                         windowDepth.get());
-    });
+    miller5.registerChangeCallback(
+        [&](float value) { viewer.setMiller(value, millerNum.get(), 4); });
 
     windowDepth.registerChangeCallback([&](float value) {
-      viewer.updateSlice(millerNum.get(), miller1.get(), miller2.get(),
-                         miller3.get(), miller4.get(), miller5.get(), value);
+      viewer.setWindow(windowSize.get(), value);
+      viewer.updateSlice();
     });
+
+    windowSize.registerChangeCallback(
+        [&](float value) { viewer.setWindow(value, windowDepth.get()); });
 
     // hasCapability(Capability::CAP_2DGUI)
     imguiInit();
@@ -169,6 +147,14 @@ struct MyApp : App {
         basis5.setNoCalls(viewer.getBasis(basisNum, 4));
       }
     }
+  }
+
+  void readMiller(int millerNum) {
+    miller1.setNoCalls(viewer.getMiller(millerNum, 0));
+    miller2.setNoCalls(viewer.getMiller(millerNum, 1));
+    miller3.setNoCalls(viewer.getMiller(millerNum, 2));
+    miller4.setNoCalls(viewer.getMiller(millerNum, 3));
+    miller5.setNoCalls(viewer.getMiller(millerNum, 4));
   }
 
   void onAnimate(double dt) override {
@@ -224,6 +210,7 @@ struct MyApp : App {
     ImGui::NewLine();
 
     ParameterGUI::draw(&showBox);
+    ParameterGUI::draw(&windowSize);
     ParameterGUI::draw(&windowDepth);
     ImGui::End();
     imguiEndFrame();
@@ -251,31 +238,6 @@ struct MyApp : App {
     // hasCapability(Capability::CAP_2DGUI)
     imguiDraw();
   }
-
-  /*bool onKeyDown(const Keyboard &k) override {
-    switch (k.key()) {
-    case ' ':
-      showLattice.set(!showLattice.get());
-      break;
-    case '3':
-      viewer.generate(3);
-      viewer.slice->update(miller1.get(), miller2.get(), miller3.get(),
-                           windowDepth.get());
-      break;
-    case '4':
-      viewer.generate(4);
-      viewer.slice->update(miller1.get(), miller2.get(), miller3.get(),
-                           windowDepth.get());
-      break;
-    case '5':
-      viewer.generate(5);
-      viewer.slice->update(miller1.get(), miller2.get(), miller3.get(),
-                           windowDepth.get());
-      break;
-    default:
-      return false;
-    }
-  }*/
 
   void onExit() {
     // hasCapability(Capability::CAP_2DGUI)

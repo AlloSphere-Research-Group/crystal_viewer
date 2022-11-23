@@ -91,48 +91,16 @@ template <int N> struct Lattice : LatticeBase {
     } else {
       int oldDim = oldLattice->dim;
 
-      if (oldDim == 3) {
-        auto oldLatticePtr = std::dynamic_pointer_cast<Lattice<3>>(oldLattice);
-        for (int i = 0; i < dim; ++i) {
-          Vec<N, float> newVec(0);
-          if (i < oldDim) {
-            for (int j = 0; j < dim && j < oldDim; ++j) {
-              newVec[j] = oldLatticePtr->basis[i][j];
-            }
-          } else {
-            newVec[i] = 1.f;
+      for (int i = 0; i < dim; ++i) {
+        Vec<N, float> newVec(0);
+        if (i < oldDim) {
+          for (int j = 0; j < dim && j < oldDim; ++j) {
+            newVec[j] = oldLattice->getBasis(i, j);
           }
-          basis.push_back(newVec);
+        } else {
+          newVec[i] = 1.f;
         }
-      } else if (oldDim == 4) {
-        auto oldLatticePtr = std::dynamic_pointer_cast<Lattice<4>>(oldLattice);
-        for (int i = 0; i < dim; ++i) {
-          Vec<N, float> newVec(0);
-          if (i < oldDim) {
-            for (int j = 0; j < dim && j < oldDim; ++j) {
-              newVec[j] = oldLatticePtr->basis[i][j];
-            }
-          } else {
-            newVec[i] = 1.f;
-          }
-          basis.push_back(newVec);
-        }
-      } else if (oldDim == 5) {
-        auto oldLatticePtr = std::dynamic_pointer_cast<Lattice<5>>(oldLattice);
-        for (int i = 0; i < dim; ++i) {
-          Vec<N, float> newVec(0);
-          if (i < oldDim) {
-            for (int j = 0; j < dim && j < oldDim; ++j) {
-              newVec[j] = oldLatticePtr->basis[i][j];
-            }
-          } else {
-            newVec[i] = 1.f;
-          }
-          basis.push_back(newVec);
-        }
-      } else {
-        std::cerr << "Lattice dimension " << oldDim << " not supported."
-                  << std::endl;
+        basis.push_back(newVec);
       }
     }
 
@@ -192,6 +160,7 @@ template <int N> struct Lattice : LatticeBase {
   }
 
   virtual void update() {
+    // TODO: check if clear can be avoided
     clear();
 
     for (auto &v : vertexIdx) {
@@ -232,17 +201,18 @@ template <int N> struct Lattice : LatticeBase {
   }
 };
 
-typedef Lattice<3> Lattice3;
-typedef Lattice<4> Lattice4;
-typedef Lattice<5> Lattice5;
-
 struct SliceBase {
   int latticeDim;
   int sliceDim;
+  float windowSize{15.f};
+  float windowDepth{0.f};
+
   virtual ~SliceBase(){};
 
-  virtual void update(int millerNum, float m1, float m2, float m3, float m4,
-                      float m5, float windowDepth) = 0;
+  virtual float getMiller(int millerNum, unsigned int index) = 0;
+  virtual void setMiller(float value, int millerNum, unsigned int index) = 0;
+  virtual void setWindow(float newWindowSize, float newWindowDepth) = 0;
+  virtual void update() = 0;
   virtual void drawSlice(Graphics &g, VAOMesh &mesh) = 0;
   virtual void drawPlane(Graphics &g) = 0;
   virtual void drawBox(Graphics &g) = 0;
@@ -260,17 +230,82 @@ template <int N, int M> struct Slice : SliceBase {
   VAOMesh slicePlane, sliceBox, planeEdges, boxEdges;
 
   Slice() {
-    millerIdx.resize(N - M);
-    normal.resize(N - M);
     latticeDim = N;
     sliceDim = M;
+    millerIdx.resize(N - M);
+    normal.resize(N - M);
+
+    for (int i = 0; i < N - M; ++i) {
+      millerIdx[i] = 0.f;
+      millerIdx[i][i] = 1.f;
+    }
   }
 
-  void init(std::shared_ptr<Lattice<N>> latticePtr) {
-    addSurface(slicePlane, 2, 2, 15, 15);
+  Slice(std::shared_ptr<SliceBase> oldSlice,
+        std::shared_ptr<Lattice<N>> latticePtr) {
+    latticeDim = N;
+    sliceDim = M;
+    millerIdx.resize(N - M);
+    normal.resize(N - M);
+    lattice = latticePtr.get();
+
+    if (oldSlice == nullptr) {
+      for (int i = 0; i < N - M; ++i) {
+        millerIdx[i] = 0.f;
+        millerIdx[i][i] = 1.f;
+      }
+    } else {
+      windowSize = oldSlice->windowSize;
+      windowDepth = oldSlice->windowDepth;
+      int oldLatticeDim = oldSlice->latticeDim;
+      int oldSliceDim = oldSlice->sliceDim;
+
+      for (int i = 0; i < N - M; ++i) {
+        millerIdx[i] = 0.f;
+        if (i < oldLatticeDim - oldSliceDim) {
+          for (int j = 0; j < N && j < oldLatticeDim; ++j) {
+            millerIdx[i][j] = oldSlice->getMiller(i, j);
+          }
+        } else {
+          millerIdx[i][i] = 1.f;
+        }
+      }
+    }
+
+    updateWindow();
+    update();
+  }
+
+  virtual float getMiller(int millerNum, unsigned int index) {
+    return millerIdx[millerNum][index];
+  }
+
+  virtual void setMiller(float value, int millerNum, unsigned int index) {
+    if (millerNum >= N - M || index >= N) {
+      std::cerr << "Error: Miller write index out of bounds" << std::endl;
+      return;
+    }
+
+    millerIdx[millerNum][index] = value;
+
+    update();
+  }
+
+  virtual void setWindow(float newWindowSize, float newWindowDepth) {
+    windowSize = newWindowSize;
+    windowDepth = newWindowDepth;
+
+    updateWindow();
+  }
+
+  void updateWindow() {
+    slicePlane.reset();
+    addSurface(slicePlane, 2, 2, windowSize, windowSize);
     slicePlane.update();
 
-    lattice = latticePtr.get();
+    sliceBox.reset();
+    addCuboid(sliceBox, 0.5f * windowSize, 0.5f * windowSize, windowDepth);
+    sliceBox.update();
   }
 
   Vec<N - M, float> distanceToPlane(Vec<N, float> &point) {
@@ -285,18 +320,14 @@ template <int N, int M> struct Slice : SliceBase {
     return dist;
   }
 
-  virtual void update(int millerNum, float m1, float m2, float m3, float m4,
-                      float m5, float windowDepth) {
-    // TODO: generalize to other dimensions
-    millerIdx[0][0] = m1;
-    millerIdx[0][1] = m2;
-    millerIdx[0][2] = m3;
-
-    normal[0] = 0;
-    for (int i = 0; i < N; ++i) {
-      normal[0] += millerIdx[0][i] * lattice->basis[i];
+  virtual void update() {
+    for (int i = 0; i < N - M; ++i) {
+      normal[i] = 0;
+      for (int j = 0; j < N; ++j) {
+        normal[i] += millerIdx[i][j] * lattice->basis[j];
+      }
+      normal[i].normalize();
     }
-    normal[0].normalize();
 
     planeVertices.clear();
     boxVertices.clear();
@@ -332,10 +363,6 @@ template <int N, int M> struct Slice : SliceBase {
     }
     planeEdges.update();
     boxEdges.update();
-
-    sliceBox.reset();
-    addCuboid(sliceBox, 7.5f, 7.5f, windowDepth);
-    sliceBox.update();
   }
 
   virtual void drawSlice(Graphics &g, VAOMesh &mesh) {
@@ -400,27 +427,24 @@ struct CrystalViewer {
   void generate(int newDim) {
     switch (newDim) {
     case 3: {
-      auto newLattice = std::make_shared<Lattice3>(lattice);
-      auto newSlice = std::make_shared<Slice<3, 2>>();
-      newSlice->init(newLattice);
+      auto newLattice = std::make_shared<Lattice<3>>(lattice);
+      auto newSlice = std::make_shared<Slice<3, 2>>(slice, newLattice);
 
       lattice = std::static_pointer_cast<LatticeBase>(newLattice);
       slice = std::static_pointer_cast<SliceBase>(newSlice);
       break;
     }
     case 4: {
-      auto newLattice = std::make_shared<Lattice4>(lattice);
-      auto newSlice = std::make_shared<Slice<4, 2>>();
-      newSlice->init(newLattice);
+      auto newLattice = std::make_shared<Lattice<4>>(lattice);
+      auto newSlice = std::make_shared<Slice<4, 2>>(slice, newLattice);
 
       lattice = std::static_pointer_cast<LatticeBase>(newLattice);
       slice = std::static_pointer_cast<SliceBase>(newSlice);
       break;
     }
     case 5: {
-      auto newLattice = std::make_shared<Lattice5>(lattice);
-      auto newSlice = std::make_shared<Slice<5, 2>>();
-      newSlice->init(newLattice);
+      auto newLattice = std::make_shared<Lattice<5>>(lattice);
+      auto newSlice = std::make_shared<Slice<5, 2>>(slice, newLattice);
 
       lattice = std::static_pointer_cast<LatticeBase>(newLattice);
       slice = std::static_pointer_cast<SliceBase>(newSlice);
@@ -434,7 +458,10 @@ struct CrystalViewer {
     dim = newDim;
   }
 
-  void createLattice(int latticeSize) { lattice->createLattice(latticeSize); }
+  void createLattice(int latticeSize) {
+    lattice->createLattice(latticeSize);
+    updateSlice();
+  }
 
   float getBasis(int basisNum, unsigned int vecIdx) {
     return lattice->getBasis(basisNum, vecIdx);
@@ -442,16 +469,26 @@ struct CrystalViewer {
 
   void setBasis(float value, int basisNum, unsigned int vecIdx) {
     lattice->setBasis(value, basisNum, vecIdx);
+    updateSlice();
   }
+
+  float getMiller(int millerNum, unsigned int index) {
+    return slice->getMiller(millerNum, index);
+  }
+
+  void setMiller(float value, int millerNum, unsigned index) {
+    slice->setMiller(value, millerNum, index);
+  }
+
+  void setWindow(float windowSize, float windowDepth) {
+    slice->setWindow(windowSize, windowDepth);
+  }
+
+  void updateSlice() { slice->update(); }
 
   void drawLattice(Graphics &g) {
     g.color(1.f, 0.1f);
     lattice->drawLattice(g, sphereMesh);
-  }
-
-  void updateSlice(int millerNum, float m1, float m2, float m3, float m4,
-                   float m5, float windowDepth) {
-    slice->update(millerNum, m1, m2, m3, m4, m5, windowDepth);
   }
 
   void drawSlice(Graphics &g) {
