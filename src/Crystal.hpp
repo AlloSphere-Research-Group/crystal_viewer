@@ -226,7 +226,7 @@ template <int N, int M> struct Slice : SliceBase {
   std::vector<Vec<N, float>> normal;
 
   std::vector<Vec<N, float>> planeVertices;
-  std::vector<Vec<N, float>> boxVertices;
+  std::vector<unsigned int> boxVertices;
   VAOMesh slicePlane, sliceBox, planeEdges, boxEdges;
 
   Slice() {
@@ -308,16 +308,15 @@ template <int N, int M> struct Slice : SliceBase {
     sliceBox.update();
   }
 
-  Vec<N - M, float> distanceToPlane(Vec<N, float> &point) {
-    Vec<N - M, float> dist{0};
+  Vec<N - M, float> project(Vec<N, float> &point) {
+    Vec<N - M, float> projVec{0.f};
 
+    // normal vector has been normalized
     for (int i = 0; i < N - M; ++i) {
-      for (int j = 0; j < N; ++j) {
-        dist[i] += point[j] * normal[i][j];
-      }
-      dist[i] /= normal[i].mag();
+      projVec[i] = point.dot(normal[i]);
     }
-    return dist;
+
+    return projVec;
   }
 
   virtual void update() {
@@ -332,14 +331,14 @@ template <int N, int M> struct Slice : SliceBase {
     planeVertices.clear();
     boxVertices.clear();
     for (int i = 0; i < lattice->vertexIdx.size(); ++i) {
-      Vec<N - M, float> dist = distanceToPlane(lattice->vertices[i]);
+      Vec<N - M, float> dist = project(lattice->vertices[i]);
       if (dist.mag() < windowDepth) {
-        // TODO: move along bivector
-        Vec<N, float> projVert = lattice->vertices[i];
-        boxVertices.push_back(projVert);
-
-        projVert = projVert - dist[0] * normal[0];
-        planeVertices.push_back(projVert);
+        boxVertices.push_back(i);
+        Vec<N, float> projVertex = lattice->vertices[i];
+        for (int j = 0; j < N - M; ++j) {
+          projVertex -= dist[j] * normal[j];
+        }
+        planeVertices.push_back(projVertex);
       }
     }
 
@@ -348,17 +347,19 @@ template <int N, int M> struct Slice : SliceBase {
     boxEdges.reset();
     boxEdges.primitive(Mesh::LINES);
     for (auto &e : lattice->edgeIdx) {
-      Vec<N - M, float> dist1 = distanceToPlane((lattice->vertices[e.first]));
-      Vec<N - M, float> dist2 = distanceToPlane((lattice->vertices[e.second]));
+      Vec<N - M, float> dist1 = project((lattice->vertices[e.first]));
+      Vec<N - M, float> dist2 = project((lattice->vertices[e.second]));
       if (dist1.mag() < windowDepth && dist2.mag() < windowDepth) {
-        Vec<N, float> edgeVertex1 = lattice->vertices[e.first];
-        Vec<N, float> edgeVertex2 = lattice->vertices[e.second];
-        boxEdges.vertex(edgeVertex1);
-        boxEdges.vertex(edgeVertex2);
-        edgeVertex1 = edgeVertex1 - dist1[0] * normal[0];
-        edgeVertex2 = edgeVertex2 - dist2[0] * normal[0];
-        planeEdges.vertex(edgeVertex1);
-        planeEdges.vertex(edgeVertex2);
+        boxEdges.vertex(lattice->vertices[e.first]);
+        boxEdges.vertex(lattice->vertices[e.second]);
+        Vec<N, float> projVertex1 = lattice->vertices[e.first];
+        Vec<N, float> projVertex2 = lattice->vertices[e.second];
+        for (int i = 0; i < N - M; ++i) {
+          projVertex1 -= dist1[i] * normal[i];
+          projVertex2 -= dist2[i] * normal[i];
+        }
+        planeEdges.vertex(projVertex1);
+        planeEdges.vertex(projVertex2);
       }
     }
     planeEdges.update();
@@ -399,10 +400,11 @@ template <int N, int M> struct Slice : SliceBase {
   }
 
   virtual void drawBoxNodes(Graphics &g, VAOMesh &mesh) {
-    for (auto &v : boxVertices) {
+    for (auto &i : boxVertices) {
       g.pushMatrix();
       // TODO: consider projection
-      g.translate(v[0], v[1], v[2]);
+      g.translate(lattice->vertices[i][0], lattice->vertices[i][1],
+                  lattice->vertices[i][2]);
       g.scale(2.f);
       g.draw(mesh);
       g.popMatrix();
