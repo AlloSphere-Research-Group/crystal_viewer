@@ -33,32 +33,39 @@
  * authors: Kon Hyong Kim
  */
 
+#include <fstream>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <vector>
 
 #include "al/graphics/al_Graphics.hpp"
 #include "al/graphics/al_Shapes.hpp"
 #include "al/graphics/al_VAOMesh.hpp"
+#include "al/io/al_File.hpp"
 #include "al/math/al_Quat.hpp"
 #include "al/math/al_Vec.hpp"
 
+#include "nlohmann/json.hpp"
+using json = nlohmann::json;
+
 using namespace al;
 
-struct LatticeBase {
+struct AbstractLattice {
   int dim;
 
-  virtual ~LatticeBase() {}
+  virtual ~AbstractLattice() {}
 
-  virtual void setBasis(float value, unsigned int basisNum,
-                        unsigned int vecIdx) = 0;
+  virtual void setBasis(float value, unsigned int basisNum, unsigned int vecIdx,
+                        bool callUpdate = true) = 0;
+  virtual void resetBasis() = 0;
   virtual float getBasis(unsigned int basisNum, unsigned int vecIdx) = 0;
   virtual void createLattice(int size) = 0;
   virtual void update() = 0;
   virtual void drawLattice(Graphics &g, VAOMesh &mesh) = 0;
 };
 
-template <int N> struct Lattice : LatticeBase {
+template <int N> struct Lattice : AbstractLattice {
   std::vector<Vec<N, float>> basis;
   std::vector<Vec<N, int>> vertexIdx;
   std::vector<std::pair<int, int>> edgeIdx;
@@ -79,7 +86,7 @@ template <int N> struct Lattice : LatticeBase {
     createLattice();
   }
 
-  Lattice(std::shared_ptr<LatticeBase> oldLattice) {
+  Lattice(std::shared_ptr<AbstractLattice> oldLattice) {
     dim = N;
 
     if (oldLattice == nullptr) {
@@ -107,14 +114,25 @@ template <int N> struct Lattice : LatticeBase {
     createLattice();
   }
 
-  virtual void setBasis(float value, unsigned int basisNum,
-                        unsigned int vecIdx) {
+  virtual void setBasis(float value, unsigned int basisNum, unsigned int vecIdx,
+                        bool callUpdate = true) {
     if (basisNum >= N || vecIdx >= N) {
       std::cerr << "Error: Basis vector write index out of bounds" << std::endl;
       return;
     }
     basis[basisNum][vecIdx] = value;
 
+    if (callUpdate) {
+      update();
+    }
+  }
+
+  virtual void resetBasis() {
+    for (int i = 0; i < N; ++i) {
+      Vec<N, float> newVec(0);
+      newVec[i] = 1.f;
+      basis[i] = newVec;
+    }
     update();
   }
 
@@ -201,13 +219,13 @@ template <int N> struct Lattice : LatticeBase {
   }
 };
 
-struct SliceBase {
+struct AbtractSlice {
   int latticeDim;
   int sliceDim;
   float windowSize{15.f};
   float windowDepth{0.f};
 
-  virtual ~SliceBase(){};
+  virtual ~AbtractSlice(){};
 
   virtual float getMiller(int millerNum, unsigned int index) = 0;
   virtual void setMiller(float value, int millerNum, unsigned int index) = 0;
@@ -217,9 +235,11 @@ struct SliceBase {
   virtual void drawPlane(Graphics &g) = 0;
   virtual void drawBox(Graphics &g) = 0;
   virtual void drawBoxNodes(Graphics &g, VAOMesh &mesh) = 0;
+  virtual void exportToTxt(const char *fileName) = 0;
+  virtual void exportToJson(const char *fileName) = 0;
 };
 
-template <int N, int M> struct Slice : SliceBase {
+template <int N, int M> struct Slice : AbtractSlice {
   Lattice<N> *lattice;
 
   std::vector<Vec<N, float>> millerIdx;
@@ -241,7 +261,7 @@ template <int N, int M> struct Slice : SliceBase {
     }
   }
 
-  Slice(std::shared_ptr<SliceBase> oldSlice,
+  Slice(std::shared_ptr<AbtractSlice> oldSlice,
         std::shared_ptr<Lattice<N>> latticePtr) {
     latticeDim = N;
     sliceDim = M;
@@ -412,12 +432,63 @@ template <int N, int M> struct Slice : SliceBase {
 
     g.draw(boxEdges);
   }
+
+  virtual void exportToTxt(const char *fileName) {
+    std::string newPath = File::conformPathToOS(File::currentPath() + fileName);
+
+    std::ofstream txtOut(newPath);
+
+    if (!txtOut.good()) {
+      std::cerr << "Failed to open file: " << newPath << std::endl;
+      return;
+    }
+
+    for (auto &v : lattice->basis) {
+      for (int i = 0; i < N - 1; ++i) {
+        txtOut << std::to_string(v[i]) + " ";
+      }
+      txtOut << std::to_string(v[N - 1]) << std::endl;
+    }
+
+    txtOut << std::endl;
+
+    for (auto &v : planeVertices) {
+      for (int i = 0; i < N - 1; ++i) {
+        txtOut << std::to_string(v[i]) + " ";
+      }
+      txtOut << std::to_string(v[N - 1]) << std::endl;
+    }
+
+    std::cout << "Exported to txt: " << newPath << std::endl;
+  }
+
+  virtual void exportToJson(const char *fileName) {
+    std::string newPath = File::conformPathToOS(File::currentPath() + fileName);
+    json newJson;
+
+    for (auto &v : lattice->basis) {
+      newJson["basis"].push_back(v);
+    }
+
+    for (auto &v : planeVertices) {
+      newJson["planeVertices"].push_back(v);
+    }
+
+    std::ofstream jsonOut(newPath);
+    if (!jsonOut.good()) {
+      std::cerr << "Unable to export to : " << std::endl;
+    }
+
+    jsonOut << std::setw(2) << newJson;
+
+    std::cout << "Exported to json: " << newPath << std::endl;
+  }
 };
 
 struct CrystalViewer {
   int dim{3};
-  std::shared_ptr<LatticeBase> lattice;
-  std::shared_ptr<SliceBase> slice;
+  std::shared_ptr<AbstractLattice> lattice;
+  std::shared_ptr<AbtractSlice> slice;
 
   VAOMesh sphereMesh;
 
@@ -432,24 +503,24 @@ struct CrystalViewer {
       auto newLattice = std::make_shared<Lattice<3>>(lattice);
       auto newSlice = std::make_shared<Slice<3, 2>>(slice, newLattice);
 
-      lattice = std::static_pointer_cast<LatticeBase>(newLattice);
-      slice = std::static_pointer_cast<SliceBase>(newSlice);
+      lattice = std::static_pointer_cast<AbstractLattice>(newLattice);
+      slice = std::static_pointer_cast<AbtractSlice>(newSlice);
       break;
     }
     case 4: {
       auto newLattice = std::make_shared<Lattice<4>>(lattice);
       auto newSlice = std::make_shared<Slice<4, 2>>(slice, newLattice);
 
-      lattice = std::static_pointer_cast<LatticeBase>(newLattice);
-      slice = std::static_pointer_cast<SliceBase>(newSlice);
+      lattice = std::static_pointer_cast<AbstractLattice>(newLattice);
+      slice = std::static_pointer_cast<AbtractSlice>(newSlice);
       break;
     }
     case 5: {
       auto newLattice = std::make_shared<Lattice<5>>(lattice);
       auto newSlice = std::make_shared<Slice<5, 2>>(slice, newLattice);
 
-      lattice = std::static_pointer_cast<LatticeBase>(newLattice);
-      slice = std::static_pointer_cast<SliceBase>(newSlice);
+      lattice = std::static_pointer_cast<AbstractLattice>(newLattice);
+      slice = std::static_pointer_cast<AbtractSlice>(newSlice);
       break;
     }
     default:
@@ -469,10 +540,20 @@ struct CrystalViewer {
     return lattice->getBasis(basisNum, vecIdx);
   }
 
-  void setBasis(float value, int basisNum, unsigned int vecIdx) {
-    lattice->setBasis(value, basisNum, vecIdx);
+  void setBasis(float value, int basisNum, unsigned int vecIdx,
+                bool callUpdate = true) {
+    lattice->setBasis(value, basisNum, vecIdx, callUpdate);
+    if (callUpdate) {
+      updateSlice();
+    }
+  }
+
+  void resetBasis() {
+    lattice->resetBasis();
     updateSlice();
   }
+
+  void updateLattice() { lattice->update(); }
 
   float getMiller(int millerNum, unsigned int index) {
     return slice->getMiller(millerNum, index);
@@ -508,6 +589,10 @@ struct CrystalViewer {
     g.color(1.f, 1.f, 0.f, 0.2f);
     slice->drawBoxNodes(g, sphereMesh);
   }
+
+  void exportSliceTxt(char *fileName) { slice->exportToTxt(fileName); }
+
+  void exportSliceJson(char *fileName) { slice->exportToJson(fileName); }
 };
 
 #endif // CRYSTAL_HPP

@@ -24,6 +24,8 @@ struct MyApp : App {
   Parameter basis4{"basis4", "", 0, -5, 5};
   Parameter basis5{"basis5", "", 0, -5, 5};
 
+  Trigger resetBasis{"resetBasis", ""};
+
   ParameterBool showSlice{"showSlice", "", 1};
   ParameterInt sliceDim{"sliceDim", "", 2, 2, 2};
 
@@ -38,6 +40,10 @@ struct MyApp : App {
   ParameterBool showBox{"showBox", "", 0};
   Parameter windowSize{"windowSize", "", 15.f, 0, 30.f};
   Parameter windowDepth{"windowDepth", "", 0, 0, 10.f};
+
+  char fileName[128] = "../data/01.json";
+  Trigger exportTxt{"exportTxt", ""};
+  Trigger exportJson{"exportJson", ""};
 
   void onCreate() override {
     lens().near(0.1).far(100).fovy(45);
@@ -68,6 +74,7 @@ struct MyApp : App {
 
     basisNum.registerChangeCallback([&](int value) { readBasis(value); });
 
+    // TODO: add in callUpdate
     basis1.registerChangeCallback(
         [&](float value) { viewer.setBasis(value, basisNum.get(), 0); });
 
@@ -82,6 +89,11 @@ struct MyApp : App {
 
     basis5.registerChangeCallback(
         [&](float value) { viewer.setBasis(value, basisNum.get(), 4); });
+
+    resetBasis.registerChangeCallback([&](bool value) {
+      viewer.resetBasis();
+      readBasis(basisNum.get());
+    });
 
     sliceDim.registerChangeCallback([&](int value) {
       millerNum.max(latticeDim.get() - value - 1);
@@ -133,6 +145,12 @@ struct MyApp : App {
     windowSize.registerChangeCallback(
         [&](float value) { viewer.setWindow(value, windowDepth.get()); });
 
+    exportTxt.registerChangeCallback(
+        [&](bool value) { viewer.exportSliceTxt(fileName); });
+
+    exportJson.registerChangeCallback(
+        [&](bool value) { viewer.exportSliceJson(fileName); });
+
     // hasCapability(Capability::CAP_2DGUI)
     imguiInit();
   }
@@ -182,6 +200,7 @@ struct MyApp : App {
         }
       }
       ImGui::Unindent();
+      ParameterGUI::draw(&resetBasis);
     }
 
     ImGui::NewLine();
@@ -212,6 +231,20 @@ struct MyApp : App {
     ParameterGUI::draw(&showBox);
     ParameterGUI::draw(&windowSize);
     ParameterGUI::draw(&windowDepth);
+
+    ImGui::NewLine();
+
+    bool what = ImGui::InputText("fileName", fileName, IM_ARRAYSIZE(fileName));
+    if (ImGui::IsItemActive()) {
+      navControl().active(false);
+    } else {
+      navControl().active(true);
+    }
+
+    ParameterGUI::draw(&exportTxt);
+    ImGui::SameLine();
+    ParameterGUI::draw(&exportJson);
+
     ImGui::End();
     imguiEndFrame();
   }
@@ -247,7 +280,7 @@ struct MyApp : App {
 
 int main() {
   MyApp app;
-  // app.dimensions(1200, 800);
-  app.dimensions(1920, 1080);
+  app.dimensions(1200, 800);
+  // app.dimensions(1920, 1080);
   app.start();
 }
