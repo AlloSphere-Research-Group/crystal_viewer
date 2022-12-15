@@ -13,6 +13,9 @@ using namespace al;
 struct MyApp : App {
   CrystalViewer viewer;
 
+  ParameterBool autoUpdate{"autoUpdate", "", 1};
+  Trigger manualUpdate{"Update", ""};
+
   ParameterBool showLattice{"showLattice", "", 1};
   ParameterInt latticeDim{"latticeDim", "", 3, 3, 5};
   ParameterInt latticeSize{"latticeSize", "", 3, 1, 5};
@@ -42,8 +45,8 @@ struct MyApp : App {
   Parameter windowDepth{"windowDepth", "", 0, 0, 10.f};
 
   char fileName[128] = "../data/01.json";
-  Trigger exportTxt{"exportTxt", ""};
-  Trigger exportJson{"exportJson", ""};
+  Trigger exportTxt{"ExportTxt", ""};
+  Trigger exportJson{"ExportJson", ""};
 
   void onCreate() override {
     lens().near(0.1).far(100).fovy(45);
@@ -51,6 +54,8 @@ struct MyApp : App {
 
     viewer.init();
     viewer.generate(latticeDim.get());
+
+    manualUpdate.registerChangeCallback([&](bool value) { viewer.update(); });
 
     latticeDim.registerChangeCallback([&](int value) {
       basisNum.max(value - 1);
@@ -75,20 +80,25 @@ struct MyApp : App {
     basisNum.registerChangeCallback([&](int value) { readBasis(value); });
 
     // TODO: add in callUpdate
-    basis1.registerChangeCallback(
-        [&](float value) { viewer.setBasis(value, basisNum.get(), 0); });
+    basis1.registerChangeCallback([&](float value) {
+      viewer.setBasis(value, basisNum.get(), 0, autoUpdate.get());
+    });
 
-    basis2.registerChangeCallback(
-        [&](float value) { viewer.setBasis(value, basisNum.get(), 1); });
+    basis2.registerChangeCallback([&](float value) {
+      viewer.setBasis(value, basisNum.get(), 1, autoUpdate.get());
+    });
 
-    basis3.registerChangeCallback(
-        [&](float value) { viewer.setBasis(value, basisNum.get(), 2); });
+    basis3.registerChangeCallback([&](float value) {
+      viewer.setBasis(value, basisNum.get(), 2, autoUpdate.get());
+    });
 
-    basis4.registerChangeCallback(
-        [&](float value) { viewer.setBasis(value, basisNum.get(), 3); });
+    basis4.registerChangeCallback([&](float value) {
+      viewer.setBasis(value, basisNum.get(), 3, autoUpdate.get());
+    });
 
-    basis5.registerChangeCallback(
-        [&](float value) { viewer.setBasis(value, basisNum.get(), 4); });
+    basis5.registerChangeCallback([&](float value) {
+      viewer.setBasis(value, basisNum.get(), 4, autoUpdate.get());
+    });
 
     resetBasis.registerChangeCallback([&](bool value) {
       viewer.resetBasis();
@@ -111,6 +121,9 @@ struct MyApp : App {
         miller3.setHint("input", -1);
         miller4.setHint("input", -1);
         miller5.setHint("input", -1);
+
+        viewer.roundMiller(autoUpdate.get());
+        readMiller(millerNum.get());
       } else {
         miller1.removeHint("input");
         miller2.removeHint("input");
@@ -122,20 +135,25 @@ struct MyApp : App {
 
     millerNum.registerChangeCallback([&](int value) { readMiller(value); });
 
-    miller1.registerChangeCallback(
-        [&](float value) { viewer.setMiller(value, millerNum.get(), 0); });
+    miller1.registerChangeCallback([&](float value) {
+      viewer.setMiller(value, millerNum.get(), 0, autoUpdate.get());
+    });
 
-    miller2.registerChangeCallback(
-        [&](float value) { viewer.setMiller(value, millerNum.get(), 1); });
+    miller2.registerChangeCallback([&](float value) {
+      viewer.setMiller(value, millerNum.get(), 1, autoUpdate.get());
+    });
 
-    miller3.registerChangeCallback(
-        [&](float value) { viewer.setMiller(value, millerNum.get(), 2); });
+    miller3.registerChangeCallback([&](float value) {
+      viewer.setMiller(value, millerNum.get(), 2, autoUpdate.get());
+    });
 
-    miller4.registerChangeCallback(
-        [&](float value) { viewer.setMiller(value, millerNum.get(), 3); });
+    miller4.registerChangeCallback([&](float value) {
+      viewer.setMiller(value, millerNum.get(), 3, autoUpdate.get());
+    });
 
-    miller5.registerChangeCallback(
-        [&](float value) { viewer.setMiller(value, millerNum.get(), 4); });
+    miller5.registerChangeCallback([&](float value) {
+      viewer.setMiller(value, millerNum.get(), 4, autoUpdate.get());
+    });
 
     windowDepth.registerChangeCallback([&](float value) {
       viewer.setWindow(windowSize.get(), value);
@@ -180,6 +198,12 @@ struct MyApp : App {
     imguiBeginFrame();
     ImGui::Begin("Crystal");
 
+    ParameterGUI::draw(&autoUpdate);
+    if (!autoUpdate.get()) {
+      ImGui::SameLine();
+      ParameterGUI::draw(&manualUpdate);
+    }
+
     ParameterGUI::draw(&showLattice);
     ParameterGUI::draw(&latticeDim);
     ParameterGUI::draw(&latticeSize);
@@ -188,7 +212,17 @@ struct MyApp : App {
 
     if (ImGui::CollapsingHeader("Edit Basis Vector",
                                 ImGuiTreeNodeFlags_CollapsingHeader)) {
+      ImGui::PushStyleColor(ImGuiCol_FrameBg,
+                            (ImVec4)ImColor::HSV(0.15f, 0.5f, 0.3f));
+      ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,
+                            (ImVec4)ImColor::HSV(0.15f, 0.6f, 0.3f));
+      ImGui::PushStyleColor(ImGuiCol_FrameBgActive,
+                            (ImVec4)ImColor::HSV(0.15f, 0.7f, 0.3f));
+      ImGui::PushStyleColor(ImGuiCol_SliderGrab,
+                            (ImVec4)ImColor::HSV(0.15f, 0.9f, 0.5f));
       ParameterGUI::draw(&basisNum);
+      ImGui::PopStyleColor(4);
+
       ImGui::Indent();
       ParameterGUI::draw(&basis1);
       ParameterGUI::draw(&basis2);
@@ -199,8 +233,8 @@ struct MyApp : App {
           ParameterGUI::draw(&basis5);
         }
       }
-      ImGui::Unindent();
       ParameterGUI::draw(&resetBasis);
+      ImGui::Unindent();
     }
 
     ImGui::NewLine();
@@ -211,7 +245,17 @@ struct MyApp : App {
 
       ImGui::NewLine();
 
+      ImGui::PushStyleColor(ImGuiCol_FrameBg,
+                            (ImVec4)ImColor::HSV(0.15f, 0.5f, 0.3f));
+      ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,
+                            (ImVec4)ImColor::HSV(0.15f, 0.6f, 0.3f));
+      ImGui::PushStyleColor(ImGuiCol_FrameBgActive,
+                            (ImVec4)ImColor::HSV(0.15f, 0.7f, 0.3f));
+      ImGui::PushStyleColor(ImGuiCol_SliderGrab,
+                            (ImVec4)ImColor::HSV(0.15f, 0.9f, 0.5f));
       ParameterGUI::draw(&millerNum);
+      ImGui::PopStyleColor(4);
+
       ImGui::Indent();
       ParameterGUI::draw(&intMiller);
       ParameterGUI::draw(&miller1);

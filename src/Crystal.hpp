@@ -33,6 +33,7 @@
  * authors: Kon Hyong Kim
  */
 
+#include <cmath>
 #include <fstream>
 #include <memory>
 #include <mutex>
@@ -228,7 +229,9 @@ struct AbtractSlice {
   virtual ~AbtractSlice(){};
 
   virtual float getMiller(int millerNum, unsigned int index) = 0;
-  virtual void setMiller(float value, int millerNum, unsigned int index) = 0;
+  virtual void setMiller(float value, int millerNum, unsigned int index,
+                         bool callUpdate = true) = 0;
+  virtual void roundMiller(bool callUpdate = true) = 0;
   virtual void setWindow(float newWindowSize, float newWindowDepth) = 0;
   virtual void update() = 0;
   virtual void drawSlice(Graphics &g, VAOMesh &mesh) = 0;
@@ -300,7 +303,8 @@ template <int N, int M> struct Slice : AbtractSlice {
     return millerIdx[millerNum][index];
   }
 
-  virtual void setMiller(float value, int millerNum, unsigned int index) {
+  virtual void setMiller(float value, int millerNum, unsigned int index,
+                         bool callUpdate = true) {
     if (millerNum >= N - M || index >= N) {
       std::cerr << "Error: Miller write index out of bounds" << std::endl;
       return;
@@ -308,7 +312,20 @@ template <int N, int M> struct Slice : AbtractSlice {
 
     millerIdx[millerNum][index] = value;
 
-    update();
+    if (callUpdate) {
+      update();
+    }
+  }
+
+  virtual void roundMiller(bool callUpdate = true) {
+    for (auto &miller : millerIdx) {
+      for (auto &v : miller) {
+        v = std::round(v);
+      }
+    }
+    if (callUpdate) {
+      update();
+    }
   }
 
   virtual void setWindow(float newWindowSize, float newWindowDepth) {
@@ -553,15 +570,23 @@ struct CrystalViewer {
     updateSlice();
   }
 
+  void update() {
+    updateLattice();
+    updateSlice();
+  }
+
   void updateLattice() { lattice->update(); }
 
   float getMiller(int millerNum, unsigned int index) {
     return slice->getMiller(millerNum, index);
   }
 
-  void setMiller(float value, int millerNum, unsigned index) {
-    slice->setMiller(value, millerNum, index);
+  void setMiller(float value, int millerNum, unsigned index,
+                 bool callUpdate = true) {
+    slice->setMiller(value, millerNum, index, callUpdate);
   }
+
+  void roundMiller(bool callUpdate = true) { slice->roundMiller(callUpdate); }
 
   void setWindow(float windowSize, float windowDepth) {
     slice->setWindow(windowSize, windowDepth);
