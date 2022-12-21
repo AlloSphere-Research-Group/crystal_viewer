@@ -238,8 +238,8 @@ struct AbtractSlice {
   virtual void drawPlane(Graphics &g) = 0;
   virtual void drawBox(Graphics &g) = 0;
   virtual void drawBoxNodes(Graphics &g, VAOMesh &mesh) = 0;
-  virtual void exportToTxt(const char *fileName) = 0;
-  virtual void exportToJson(const char *fileName) = 0;
+  virtual void exportToTxt(std::string &filePath) = 0;
+  virtual void exportToJson(std::string &filePath) = 0;
 };
 
 template <int N, int M> struct Slice : AbtractSlice {
@@ -450,13 +450,12 @@ template <int N, int M> struct Slice : AbtractSlice {
     g.draw(boxEdges);
   }
 
-  virtual void exportToTxt(const char *fileName) {
-    std::string newPath = File::conformPathToOS(File::currentPath() + fileName);
-
-    std::ofstream txtOut(newPath);
+  virtual void exportToTxt(std::string &filePath) {
+    filePath += ".txt";
+    std::ofstream txtOut(filePath);
 
     if (!txtOut.good()) {
-      std::cerr << "Failed to open file: " << newPath << std::endl;
+      std::cerr << "Failed to open file: " << filePath << std::endl;
       return;
     }
 
@@ -476,11 +475,11 @@ template <int N, int M> struct Slice : AbtractSlice {
       txtOut << std::to_string(v[N - 1]) << std::endl;
     }
 
-    std::cout << "Exported to txt: " << newPath << std::endl;
+    std::cout << "Exported to txt: " << filePath << std::endl;
   }
 
-  virtual void exportToJson(const char *fileName) {
-    std::string newPath = File::conformPathToOS(File::currentPath() + fileName);
+  virtual void exportToJson(std::string &filePath) {
+    filePath += ".json";
     json newJson;
 
     for (auto &v : lattice->basis) {
@@ -491,14 +490,15 @@ template <int N, int M> struct Slice : AbtractSlice {
       newJson["planeVertices"].push_back(v);
     }
 
-    std::ofstream jsonOut(newPath);
+    std::ofstream jsonOut(filePath);
     if (!jsonOut.good()) {
-      std::cerr << "Unable to export to : " << std::endl;
+      std::cerr << "Unable to export to : " << filePath << std::endl;
+      return;
     }
 
     jsonOut << std::setw(2) << newJson;
 
-    std::cout << "Exported to json: " << newPath << std::endl;
+    std::cout << "Exported to json: " << filePath << std::endl;
   }
 };
 
@@ -615,9 +615,9 @@ struct CrystalViewer {
     slice->drawBoxNodes(g, sphereMesh);
   }
 
-  void exportSliceTxt(char *fileName) { slice->exportToTxt(fileName); }
+  void exportSliceTxt(std::string &filePath) { slice->exportToTxt(filePath); }
 
-  void exportSliceJson(char *fileName) { slice->exportToJson(fileName); }
+  void exportSliceJson(std::string &filePath) { slice->exportToJson(filePath); }
 };
 
 #endif // CRYSTAL_HPP

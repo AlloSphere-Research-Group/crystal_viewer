@@ -44,7 +44,8 @@ struct MyApp : App {
   Parameter windowSize{"windowSize", "", 15.f, 0, 30.f};
   Parameter windowDepth{"windowDepth", "", 0, 0, 10.f};
 
-  char fileName[128] = "../data/01.json";
+  std::string dataDir;
+  char fileName[128] = "01";
   Trigger exportTxt{"ExportTxt", ""};
   Trigger exportJson{"ExportJson", ""};
 
@@ -54,6 +55,20 @@ struct MyApp : App {
 
     viewer.init();
     viewer.generate(latticeDim.get());
+
+    dataDir = File::conformPathToOS(File::currentPath());
+
+    // remove bin directory from path
+    auto posBin = dataDir.find("bin");
+    dataDir = dataDir.substr(0, posBin);
+    dataDir = File::conformPathToOS(dataDir + "data/");
+
+    if (!al::File::exists(dataDir)) {
+      if (!al::Dir::make(dataDir)) {
+        std::cerr << "Unable to create directory: " << dataDir << std::endl;
+        quit();
+      }
+    }
 
     manualUpdate.registerChangeCallback([&](bool value) { viewer.update(); });
 
@@ -163,11 +178,13 @@ struct MyApp : App {
     windowSize.registerChangeCallback(
         [&](float value) { viewer.setWindow(value, windowDepth.get()); });
 
-    exportTxt.registerChangeCallback(
-        [&](bool value) { viewer.exportSliceTxt(fileName); });
+    exportTxt.registerChangeCallback([&](bool value) {
+      viewer.exportSliceTxt(File::conformPathToOS(dataDir + fileName));
+    });
 
-    exportJson.registerChangeCallback(
-        [&](bool value) { viewer.exportSliceJson(fileName); });
+    exportJson.registerChangeCallback([&](bool value) {
+      viewer.exportSliceJson(File::conformPathToOS(dataDir + fileName));
+    });
 
     // hasCapability(Capability::CAP_2DGUI)
     imguiInit();
@@ -278,7 +295,8 @@ struct MyApp : App {
 
     ImGui::NewLine();
 
-    bool what = ImGui::InputText("fileName", fileName, IM_ARRAYSIZE(fileName));
+    ImGui::Text(dataDir.c_str());
+    ImGui::InputText("fileName", fileName, IM_ARRAYSIZE(fileName));
     if (ImGui::IsItemActive()) {
       navControl().active(false);
     } else {
