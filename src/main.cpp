@@ -297,7 +297,7 @@ struct MyApp : App {
 
     ImGui::NewLine();
 
-    ImGui::Text(dataDir.c_str());
+    ImGui::Text("%s", dataDir.c_str());
     ImGui::InputText("fileName", fileName, IM_ARRAYSIZE(fileName));
     if (ImGui::IsItemActive()) {
       navControl().active(false);
