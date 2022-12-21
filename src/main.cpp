@@ -179,11 +179,13 @@ struct MyApp : App {
         [&](float value) { viewer.setWindow(value, windowDepth.get()); });
 
     exportTxt.registerChangeCallback([&](bool value) {
-      viewer.exportSliceTxt(File::conformPathToOS(dataDir + fileName));
+      std::string newPath = File::conformPathToOS(dataDir + fileName);
+      viewer.exportSliceTxt(newPath);
     });
 
     exportJson.registerChangeCallback([&](bool value) {
-      viewer.exportSliceJson(File::conformPathToOS(dataDir + fileName));
+      std::string newPath = File::conformPathToOS(dataDir + fileName);
+      viewer.exportSliceJson(newPath);
     });
 
     // hasCapability(Capability::CAP_2DGUI)
