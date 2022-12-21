@@ -232,6 +232,7 @@ struct AbtractSlice {
   virtual void setMiller(float value, int millerNum, unsigned int index,
                          bool callUpdate = true) = 0;
   virtual void roundMiller(bool callUpdate = true) = 0;
+  virtual Vec3f getNormal() = 0;
   virtual void setWindow(float newWindowSize, float newWindowDepth) = 0;
   virtual void update() = 0;
   virtual void drawSlice(Graphics &g, VAOMesh &mesh) = 0;
@@ -326,6 +327,14 @@ template <int N, int M> struct Slice : AbtractSlice {
     if (callUpdate) {
       update();
     }
+  }
+
+  virtual Vec3f getNormal() {
+    Vec3f newNorm{0};
+    for (int i = 0; i < 3; ++i) {
+      newNorm[i] = normal[0][i];
+    }
+    return newNorm;
   }
 
   virtual void setWindow(float newWindowSize, float newWindowDepth) {
@@ -587,6 +596,8 @@ struct CrystalViewer {
   }
 
   void roundMiller(bool callUpdate = true) { slice->roundMiller(callUpdate); }
+
+  Vec3f getNormal() { return slice->getNormal(); }
 
   void setWindow(float windowSize, float windowDepth) {
     slice->setWindow(windowSize, windowDepth);

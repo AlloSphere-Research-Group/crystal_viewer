@@ -18,7 +18,7 @@ struct MyApp : App {
 
   ParameterBool showLattice{"showLattice", "", 1};
   ParameterInt latticeDim{"latticeDim", "", 3, 3, 5};
-  ParameterInt latticeSize{"latticeSize", "", 3, 1, 5};
+  ParameterInt latticeSize{"latticeSize", "", 3, 1, 15};
 
   ParameterInt basisNum{"basisNum", "", 0, 0, 2};
   Parameter basis1{"basis1", "", 1, -5, 5};
@@ -30,6 +30,7 @@ struct MyApp : App {
   Trigger resetBasis{"resetBasis", ""};
 
   ParameterBool showSlice{"showSlice", "", 1};
+  ParameterBool lockCameraToSlice{"lockCameraToSlice", "", 0};
   ParameterInt sliceDim{"sliceDim", "", 2, 2, 2};
 
   ParameterInt millerNum{"millerNum", "", 0, 0, 0};
@@ -259,6 +260,7 @@ struct MyApp : App {
     ImGui::NewLine();
 
     ParameterGUI::draw(&showSlice);
+    ParameterGUI::draw(&lockCameraToSlice);
     if (showSlice.get()) {
       ParameterGUI::draw(&sliceDim);
 
@@ -320,6 +322,13 @@ struct MyApp : App {
     g.blending(true);
     g.blendAdd();
 
+    g.pushMatrix();
+
+    if (lockCameraToSlice.get()) {
+      Quatf rot = Quatf::getRotationTo(viewer.getNormal(), nav().uf());
+      g.rotate(rot);
+    }
+
     if (showLattice.get()) {
       viewer.drawLattice(g);
     }
@@ -331,6 +340,8 @@ struct MyApp : App {
     if (showSlice.get()) {
       viewer.drawSlice(g);
     }
+
+    g.popMatrix();
 
     // hasCapability(Capability::CAP_2DGUI)
     imguiDraw();
