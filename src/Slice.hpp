@@ -1,8 +1,7 @@
-#ifndef CRYSTAL_HPP
-#define CRYSTAL_HPP
-
+#ifndef SLICE_HPP
+#define SLICE_HPP
 /*
- * Copyright 2022 AlloSphere Research Group
+ * Copyright 2023 AlloSphere Research Group
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -18,7 +17,7 @@
  * contributors may be used to endorse or promote products derived from this
  * software without specific prior written permission.
  *
- *        THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
  * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
@@ -30,199 +29,18 @@
  * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
- * authors: Kon Hyong Kim
+ * Author: Kon Hyong Kim
  */
 
-#include <cmath>
-#include <fstream>
-#include <memory>
-#include <mutex>
-#include <string>
-#include <vector>
-
-#include "al/graphics/al_Graphics.hpp"
-#include "al/graphics/al_Shapes.hpp"
-#include "al/graphics/al_VAOMesh.hpp"
-#include "al/io/al_File.hpp"
-#include "al/math/al_Quat.hpp"
-#include "al/math/al_Vec.hpp"
+#include "Lattice.hpp"
 
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
 
-using namespace al;
-
-struct AbstractLattice {
-  int dim;
-
-  virtual ~AbstractLattice() {}
-
-  virtual void setBasis(float value, unsigned int basisNum, unsigned int vecIdx,
-                        bool callUpdate = true) = 0;
-  virtual void resetBasis() = 0;
-  virtual float getBasis(unsigned int basisNum, unsigned int vecIdx) = 0;
-  virtual void createLattice(int size) = 0;
-  virtual void update() = 0;
-  virtual void drawLattice(Graphics &g, VAOMesh &mesh) = 0;
-};
-
-template <int N> struct Lattice : AbstractLattice {
-  std::vector<Vec<N, float>> basis;
-  std::vector<Vec<N, int>> vertexIdx;
-  std::vector<std::pair<int, int>> edgeIdx;
-  std::vector<Vec<N, float>> vertices;
-
-  int latticeSize{3};
-  VAOMesh edges;
-
-  Lattice() {
-    dim = N;
-
-    for (int i = 0; i < N; ++i) {
-      Vec<N, float> newVec(0);
-      newVec[i] = 1.f;
-      basis.push_back(newVec);
-    }
-
-    createLattice();
-  }
-
-  Lattice(std::shared_ptr<AbstractLattice> oldLattice) {
-    dim = N;
-
-    if (oldLattice == nullptr) {
-      for (int i = 0; i < N; ++i) {
-        Vec<N, float> newVec(0);
-        newVec[i] = 1.f;
-        basis.push_back(newVec);
-      }
-    } else {
-      int oldDim = oldLattice->dim;
-
-      for (int i = 0; i < dim; ++i) {
-        Vec<N, float> newVec(0);
-        if (i < oldDim) {
-          for (int j = 0; j < dim && j < oldDim; ++j) {
-            newVec[j] = oldLattice->getBasis(i, j);
-          }
-        } else {
-          newVec[i] = 1.f;
-        }
-        basis.push_back(newVec);
-      }
-    }
-
-    createLattice();
-  }
-
-  virtual void setBasis(float value, unsigned int basisNum, unsigned int vecIdx,
-                        bool callUpdate = true) {
-    if (basisNum >= N || vecIdx >= N) {
-      std::cerr << "Error: Basis vector write index out of bounds" << std::endl;
-      return;
-    }
-    basis[basisNum][vecIdx] = value;
-
-    if (callUpdate) {
-      update();
-    }
-  }
-
-  virtual void resetBasis() {
-    for (int i = 0; i < N; ++i) {
-      Vec<N, float> newVec(0);
-      newVec[i] = 1.f;
-      basis[i] = newVec;
-    }
-    update();
-  }
-
-  virtual float getBasis(unsigned int basisNum, unsigned int vecIdx) {
-    if (basisNum >= N || vecIdx >= N) {
-      std::cerr << "Error: Basis vector read index out of bounds" << std::endl;
-      return 0.f;
-    }
-    return basis[basisNum][vecIdx];
-  }
-
-  virtual void createLattice(int size) {
-    latticeSize = size;
-    createLattice();
-  }
-
-  void createLattice() {
-    vertexIdx.clear();
-
-    Vec<N, int> newIdx(-latticeSize);
-    vertexIdx.push_back(newIdx);
-
-    while (true) {
-      newIdx[0] += 1;
-      for (int i = 0; i < N - 1; ++i) {
-        if (newIdx[i] > latticeSize) {
-          newIdx[i] = -latticeSize;
-          newIdx[i + 1] += 1;
-        }
-      }
-      if (newIdx[N - 1] > latticeSize)
-        break;
-
-      vertexIdx.push_back(newIdx);
-    }
-
-    update();
-  }
-
-  void clear() {
-    edgeIdx.clear();
-    vertices.clear();
-  }
-
-  virtual void update() {
-    // TODO: check if clear can be avoided
-    clear();
-
-    for (auto &v : vertexIdx) {
-      Vec<N, float> newVec(0);
-      for (int i = 0; i < N; ++i) {
-        newVec += (float)v[i] * basis[i];
-      }
-      vertices.push_back(newVec);
-    }
-
-    for (int i = 0; i < vertexIdx.size() - 1; ++i) {
-      for (int j = i + 1; j < vertexIdx.size(); ++j) {
-        if ((vertexIdx[i] - vertexIdx[j]).magSqr() == 1) {
-          edgeIdx.push_back({i, j});
-        }
-      }
-    }
-
-    edges.reset();
-    edges.primitive(Mesh::LINES);
-    for (auto &e : edgeIdx) {
-      edges.vertex(vertices[e.first]);
-      edges.vertex(vertices[e.second]);
-    }
-    edges.update();
-  }
-
-  virtual void drawLattice(Graphics &g, VAOMesh &mesh) {
-    for (auto &v : vertices) {
-      g.pushMatrix();
-      // TODO: consider projection
-      g.translate(v[0], v[1], v[2]);
-      g.draw(mesh);
-      g.popMatrix();
-    }
-
-    g.draw(edges);
-  }
-};
-
 struct AbtractSlice {
   int latticeDim;
   int sliceDim;
+  float edgeThreshold{1.f};
   float windowSize{15.f};
   float windowDepth{0.f};
 
@@ -232,6 +50,7 @@ struct AbtractSlice {
   virtual void setMiller(float value, int millerNum, unsigned int index,
                          bool callUpdate = true) = 0;
   virtual void roundMiller(bool callUpdate = true) = 0;
+  virtual void setEdgeThreshold(float newEdgeThreshold) = 0;
   virtual Vec3f getNormal() = 0;
   virtual void setWindow(float newWindowSize, float newWindowDepth) = 0;
   virtual void update() = 0;
@@ -248,9 +67,10 @@ template <int N, int M> struct Slice : AbtractSlice {
 
   std::vector<Vec<N, float>> millerIdx;
   std::vector<Vec<N, float>> normal;
+  std::vector<Vec<N, float>> sliceBasis;
 
   std::vector<Vec<N, float>> planeVertices;
-  std::vector<unsigned int> boxVertices;
+  std::vector<std::pair<unsigned int, unsigned int>> boxVertices;
   VAOMesh slicePlane, sliceBox, planeEdges, boxEdges;
 
   Slice() {
@@ -258,6 +78,7 @@ template <int N, int M> struct Slice : AbtractSlice {
     sliceDim = M;
     millerIdx.resize(N - M);
     normal.resize(N - M);
+    sliceBasis.resize(M);
 
     for (int i = 0; i < N - M; ++i) {
       millerIdx[i] = 0.f;
@@ -271,6 +92,7 @@ template <int N, int M> struct Slice : AbtractSlice {
     sliceDim = M;
     millerIdx.resize(N - M);
     normal.resize(N - M);
+    sliceBasis.resize(M);
     lattice = latticePtr.get();
 
     if (oldSlice == nullptr) {
@@ -329,6 +151,10 @@ template <int N, int M> struct Slice : AbtractSlice {
     }
   }
 
+  virtual void setEdgeThreshold(float newEdgeThreshold) {
+    edgeThreshold = newEdgeThreshold;
+  }
+
   virtual Vec3f getNormal() {
     Vec3f newNorm{0};
     for (int i = 0; i < 3; ++i) {
@@ -354,18 +180,20 @@ template <int N, int M> struct Slice : AbtractSlice {
     sliceBox.update();
   }
 
-  Vec<N - M, float> project(Vec<N, float> &point) {
+  Vec<N - M, float> distanceToPlane(Vec<N, float> &point) {
     Vec<N - M, float> projVec{0.f};
 
     // normal vector has been normalized
     for (int i = 0; i < N - M; ++i) {
-      projVec[i] = point.dot(normal[i]);
+      projVec[i] = point.dot(normal[i]) / normal[i].mag();
     }
 
     return projVec;
   }
 
-  virtual void update() {
+  Vec<M, float> project(Vec<N, float> &point) {}
+
+  void computeNormal() {
     for (int i = 0; i < N - M; ++i) {
       normal[i] = 0;
       for (int j = 0; j < N; ++j) {
@@ -374,17 +202,28 @@ template <int N, int M> struct Slice : AbtractSlice {
       normal[i].normalize();
     }
 
+    /*for (int i = 0; i < M; ++i) {
+      sliceBasis[i] =
+    }*/
+  }
+
+  virtual void update() {
+    computeNormal();
+
     planeVertices.clear();
     boxVertices.clear();
+    int index = 0;
     for (int i = 0; i < lattice->vertexIdx.size(); ++i) {
-      Vec<N - M, float> dist = project(lattice->vertices[i]);
+      Vec<N - M, float> dist = distanceToPlane(lattice->vertices[i]);
       if (dist.mag() < windowDepth) {
-        boxVertices.push_back(i);
         Vec<N, float> projVertex = lattice->vertices[i];
         for (int j = 0; j < N - M; ++j) {
           projVertex -= dist[j] * normal[j];
         }
         planeVertices.push_back(projVertex);
+
+        boxVertices.push_back({i, index});
+        index++;
       }
     }
 
@@ -392,9 +231,29 @@ template <int N, int M> struct Slice : AbtractSlice {
     planeEdges.primitive(Mesh::LINES);
     boxEdges.reset();
     boxEdges.primitive(Mesh::LINES);
+
+    // for (int i = 0; i < planeVertices.size(); ++i) {
+    //   for (int j = i + 1; j < planeVertices.size(); ++j) {
+    //     if ((planeVertices[i] - planeVertices[j]).magSqr() < edgeThreshold) {
+    //       planeEdges.vertex(planeVertices[i]);
+    //       planeEdges.vertex(planeVertices[j]);
+    //     }
+    //   }
+    // }
     for (auto &e : lattice->edgeIdx) {
-      Vec<N - M, float> dist1 = project((lattice->vertices[e.first]));
-      Vec<N - M, float> dist2 = project((lattice->vertices[e.second]));
+      // auto it1 = std::find_if(
+      //     boxVertices.begin(), boxVertices.end(),
+      //     [&e](const std::pair<unsigned int, unsigned int> &element) {
+      //       return element.first == e.first;
+      //     });
+      // auto it2 = std::find_if(
+      //     boxVertices.begin(), boxVertices.end(),
+      //     [&e](const std::pair<unsigned int, unsigned int> &element) {
+      //       return element.first == e.second;
+      //     });
+
+      Vec<N - M, float> dist1 = distanceToPlane((lattice->vertices[e.first]));
+      Vec<N - M, float> dist2 = distanceToPlane((lattice->vertices[e.second]));
       if (dist1.mag() < windowDepth && dist2.mag() < windowDepth) {
         boxEdges.vertex(lattice->vertices[e.first]);
         boxEdges.vertex(lattice->vertices[e.second]);
@@ -446,11 +305,12 @@ template <int N, int M> struct Slice : AbtractSlice {
   }
 
   virtual void drawBoxNodes(Graphics &g, VAOMesh &mesh) {
-    for (auto &i : boxVertices) {
+    for (auto &bv : boxVertices) {
       g.pushMatrix();
       // TODO: consider projection
-      g.translate(lattice->vertices[i][0], lattice->vertices[i][1],
-                  lattice->vertices[i][2]);
+      g.translate(lattice->vertices[bv.first][0],
+                  lattice->vertices[bv.first][1],
+                  lattice->vertices[bv.first][2]);
       g.scale(2.f);
       g.draw(mesh);
       g.popMatrix();
@@ -511,124 +371,4 @@ template <int N, int M> struct Slice : AbtractSlice {
   }
 };
 
-struct CrystalViewer {
-  int dim{3};
-  std::shared_ptr<AbstractLattice> lattice;
-  std::shared_ptr<AbtractSlice> slice;
-
-  VAOMesh sphereMesh;
-
-  void init() {
-    addSphere(sphereMesh, 0.02);
-    sphereMesh.update();
-  }
-
-  void generate(int newDim) {
-    switch (newDim) {
-    case 3: {
-      auto newLattice = std::make_shared<Lattice<3>>(lattice);
-      auto newSlice = std::make_shared<Slice<3, 2>>(slice, newLattice);
-
-      lattice = std::static_pointer_cast<AbstractLattice>(newLattice);
-      slice = std::static_pointer_cast<AbtractSlice>(newSlice);
-      break;
-    }
-    case 4: {
-      auto newLattice = std::make_shared<Lattice<4>>(lattice);
-      auto newSlice = std::make_shared<Slice<4, 2>>(slice, newLattice);
-
-      lattice = std::static_pointer_cast<AbstractLattice>(newLattice);
-      slice = std::static_pointer_cast<AbtractSlice>(newSlice);
-      break;
-    }
-    case 5: {
-      auto newLattice = std::make_shared<Lattice<5>>(lattice);
-      auto newSlice = std::make_shared<Slice<5, 2>>(slice, newLattice);
-
-      lattice = std::static_pointer_cast<AbstractLattice>(newLattice);
-      slice = std::static_pointer_cast<AbtractSlice>(newSlice);
-      break;
-    }
-    default:
-      std::cerr << "Dimension " << newDim << " not supported." << std::endl;
-      return;
-    }
-
-    dim = newDim;
-  }
-
-  void createLattice(int latticeSize) {
-    lattice->createLattice(latticeSize);
-    updateSlice();
-  }
-
-  float getBasis(int basisNum, unsigned int vecIdx) {
-    return lattice->getBasis(basisNum, vecIdx);
-  }
-
-  void setBasis(float value, int basisNum, unsigned int vecIdx,
-                bool callUpdate = true) {
-    lattice->setBasis(value, basisNum, vecIdx, callUpdate);
-    if (callUpdate) {
-      updateSlice();
-    }
-  }
-
-  void resetBasis() {
-    lattice->resetBasis();
-    updateSlice();
-  }
-
-  void update() {
-    updateLattice();
-    updateSlice();
-  }
-
-  void updateLattice() { lattice->update(); }
-
-  float getMiller(int millerNum, unsigned int index) {
-    return slice->getMiller(millerNum, index);
-  }
-
-  void setMiller(float value, int millerNum, unsigned index,
-                 bool callUpdate = true) {
-    slice->setMiller(value, millerNum, index, callUpdate);
-  }
-
-  void roundMiller(bool callUpdate = true) { slice->roundMiller(callUpdate); }
-
-  Vec3f getNormal() { return slice->getNormal(); }
-
-  void setWindow(float windowSize, float windowDepth) {
-    slice->setWindow(windowSize, windowDepth);
-  }
-
-  void updateSlice() { slice->update(); }
-
-  void drawLattice(Graphics &g) {
-    g.color(1.f, 0.1f);
-    lattice->drawLattice(g, sphereMesh);
-  }
-
-  void drawSlice(Graphics &g) {
-    g.color(0.f, 0.f, 1.f, 0.3f);
-    slice->drawPlane(g);
-
-    g.color(1.f, 0.8f);
-    slice->drawSlice(g, sphereMesh);
-  }
-
-  void drawBox(Graphics &g) {
-    g.color(0.3f, 0.3f, 1.0f, 0.1f);
-    slice->drawBox(g);
-
-    g.color(1.f, 1.f, 0.f, 0.2f);
-    slice->drawBoxNodes(g, sphereMesh);
-  }
-
-  void exportSliceTxt(std::string &filePath) { slice->exportToTxt(filePath); }
-
-  void exportSliceJson(std::string &filePath) { slice->exportToJson(filePath); }
-};
-
-#endif // CRYSTAL_HPP
+#endif // SLICE_HPP

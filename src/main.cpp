@@ -6,7 +6,7 @@
 #include "al/graphics/al_Shapes.hpp"
 #include "al/ui/al_ParameterGUI.hpp"
 
-#include "Crystal.hpp"
+#include "CrystalViewer.hpp"
 
 using namespace al;
 
@@ -16,9 +16,15 @@ struct MyApp : App {
   ParameterBool autoUpdate{"autoUpdate", "", 1};
   Trigger manualUpdate{"Update", ""};
 
+  ParameterInt crystalDim{"crystalDim", "", 3, 3, 5};
+
   ParameterBool showLattice{"showLattice", "", 1};
-  ParameterInt latticeDim{"latticeDim", "", 3, 3, 5};
-  ParameterInt latticeSize{"latticeSize", "", 3, 1, 15};
+  ParameterInt latticeSize{"latticeSize", "", 1, 1, 5};
+  ParameterBool showLatticeEdge{"showLatticeEdge", "", 1};
+
+  Parameter latticeSphereSize{"latticeSphereSize", "", 0.02, 0.001, 1};
+  ParameterColor latticeSphereColor{"latticeSphereColor", ""};
+  ParameterColor latticeEdgeColor{"latticeEdgeColor", ""};
 
   ParameterInt basisNum{"basisNum", "", 0, 0, 2};
   Parameter basis1{"basis1", "", 1, -5, 5};
@@ -30,20 +36,26 @@ struct MyApp : App {
   Trigger resetBasis{"resetBasis", ""};
 
   ParameterBool showSlice{"showSlice", "", 1};
-  ParameterBool lockCameraToSlice{"lockCameraToSlice", "", 0};
   ParameterInt sliceDim{"sliceDim", "", 2, 2, 2};
+  Parameter sliceDepth{"sliceDepth", "", 0, 0, 10.f};
+  ParameterBool showSliceEdge{"showSliceEdge", "", 0};
+
+  Parameter sliceSphereSize{"sliceSphereSize", 0.02, 0.001, 1};
+  ParameterColor sliceSphereColor{"sliceSphereColor", ""};
+  ParameterColor sliceEdgeColor{"sliceEdgeColor", ""};
+  ParameterBool showSlicePlane{"showSlicePlane", "", 0};
+  Parameter slicePlaneSize{"slicePlaneSize", "", 15.f, 0, 30.f};
+  ParameterColor slicePlaneColor{"slicePlaneColor", ""};
+
+  ParameterBool lockCameraToSlice{"lockCameraToSlice", "", 0};
 
   ParameterInt millerNum{"millerNum", "", 0, 0, 0};
   ParameterBool intMiller{"intMiller", ""};
-  Parameter miller1{"miller1", "", 1, -4, 4};
-  Parameter miller2{"miller2", "", 0, -4, 4};
-  Parameter miller3{"miller3", "", 0, -4, 4};
-  Parameter miller4{"miller4", "", 0, -4, 4};
-  Parameter miller5{"miller5", "", 0, -4, 4};
-
-  ParameterBool showBox{"showBox", "", 0};
-  Parameter windowSize{"windowSize", "", 15.f, 0, 30.f};
-  Parameter windowDepth{"windowDepth", "", 0, 0, 10.f};
+  Parameter miller1{"miller1", "", 1, -5, 5};
+  Parameter miller2{"miller2", "", 0, -5, 5};
+  Parameter miller3{"miller3", "", 0, -5, 5};
+  Parameter miller4{"miller4", "", 0, -5, 5};
+  Parameter miller5{"miller5", "", 0, -5, 5};
 
   std::string dataDir;
   char fileName[128] = "01";
@@ -55,7 +67,7 @@ struct MyApp : App {
     nav().pos(0, 0, 4);
 
     viewer.init();
-    viewer.generate(latticeDim.get());
+    viewer.generate(crystalDim.get());
 
     dataDir = File::conformPathToOS(File::currentPath());
 
@@ -71,9 +83,11 @@ struct MyApp : App {
       }
     }
 
+    // autoUpdate.registerChangeCallback(
+    //     [&](bool value) { viewer.setAutoUpdate(value); });
     manualUpdate.registerChangeCallback([&](bool value) { viewer.update(); });
 
-    latticeDim.registerChangeCallback([&](int value) {
+    crystalDim.registerChangeCallback([&](int value) {
       basisNum.max(value - 1);
       if (basisNum.get() > value - 1) {
         basisNum.set(value - 1);
@@ -88,10 +102,15 @@ struct MyApp : App {
       }
 
       viewer.generate(value);
+
+      latticeSize.setNoCalls(1);
     });
 
     latticeSize.registerChangeCallback(
         [&](int value) { viewer.createLattice(value); });
+
+    latticeSphereSize.registerChangeCallback(
+        [&](float value) { viewer.setLatticeSphereSize(value); });
 
     basisNum.registerChangeCallback([&](int value) { readBasis(value); });
 
@@ -122,9 +141,9 @@ struct MyApp : App {
     });
 
     sliceDim.registerChangeCallback([&](int value) {
-      millerNum.max(latticeDim.get() - value - 1);
-      if (millerNum.get() > latticeDim.get() - value - 1) {
-        millerNum.set(latticeDim.get() - value - 1);
+      millerNum.max(crystalDim.get() - value - 1);
+      if (millerNum.get() > crystalDim.get() - value - 1) {
+        millerNum.set(crystalDim.get() - value - 1);
       }
 
       // TODO: add 3d slice transition
@@ -171,13 +190,13 @@ struct MyApp : App {
       viewer.setMiller(value, millerNum.get(), 4, autoUpdate.get());
     });
 
-    windowDepth.registerChangeCallback([&](float value) {
-      viewer.setWindow(windowSize.get(), value);
+    sliceDepth.registerChangeCallback([&](float value) {
+      viewer.setWindow(slicePlaneSize.get(), value);
       viewer.updateSlice();
     });
 
-    windowSize.registerChangeCallback(
-        [&](float value) { viewer.setWindow(value, windowDepth.get()); });
+    slicePlaneSize.registerChangeCallback(
+        [&](float value) { viewer.setWindow(value, sliceDepth.get()); });
 
     exportTxt.registerChangeCallback([&](bool value) {
       std::string newPath = File::conformPathToOS(dataDir + fileName);
@@ -197,9 +216,9 @@ struct MyApp : App {
     basis1.setNoCalls(viewer.getBasis(basisNum, 0));
     basis2.setNoCalls(viewer.getBasis(basisNum, 1));
     basis3.setNoCalls(viewer.getBasis(basisNum, 2));
-    if (viewer.dim > 3) {
+    if (viewer.getDim() > 3) {
       basis4.setNoCalls(viewer.getBasis(basisNum, 3));
-      if (viewer.dim > 4) {
+      if (viewer.getDim() > 4) {
         basis5.setNoCalls(viewer.getBasis(basisNum, 4));
       }
     }
@@ -224,11 +243,18 @@ struct MyApp : App {
       ParameterGUI::draw(&manualUpdate);
     }
 
-    ParameterGUI::draw(&showLattice);
-    ParameterGUI::draw(&latticeDim);
-    ParameterGUI::draw(&latticeSize);
+    ParameterGUI::draw(&crystalDim);
 
-    ImGui::NewLine();
+    ParameterGUI::draw(&showLattice);
+    ParameterGUI::draw(&latticeSize);
+    ParameterGUI::draw(&showLatticeEdge);
+
+    if (ImGui::CollapsingHeader("Lattice Display Settings",
+                                ImGuiTreeNodeFlags_CollapsingHeader)) {
+      ParameterGUI::draw(&latticeSphereSize);
+      ParameterGUI::draw(&latticeSphereColor);
+      ParameterGUI::draw(&latticeEdgeColor);
+    }
 
     if (ImGui::CollapsingHeader("Edit Basis Vector",
                                 ImGuiTreeNodeFlags_CollapsingHeader)) {
@@ -247,9 +273,9 @@ struct MyApp : App {
       ParameterGUI::draw(&basis1);
       ParameterGUI::draw(&basis2);
       ParameterGUI::draw(&basis3);
-      if (latticeDim.get() > 3) {
+      if (crystalDim.get() > 3) {
         ParameterGUI::draw(&basis4);
-        if (latticeDim.get() > 4) {
+        if (crystalDim.get() > 4) {
           ParameterGUI::draw(&basis5);
         }
       }
@@ -282,9 +308,9 @@ struct MyApp : App {
       ParameterGUI::draw(&miller1);
       ParameterGUI::draw(&miller2);
       ParameterGUI::draw(&miller3);
-      if (latticeDim.get() > 3) {
+      if (crystalDim.get() > 3) {
         ParameterGUI::draw(&miller4);
-        if (latticeDim.get() > 4) {
+        if (crystalDim.get() > 4) {
           ParameterGUI::draw(&miller5);
         }
       }
@@ -293,9 +319,9 @@ struct MyApp : App {
 
     ImGui::NewLine();
 
-    ParameterGUI::draw(&showBox);
-    ParameterGUI::draw(&windowSize);
-    ParameterGUI::draw(&windowDepth);
+    ParameterGUI::draw(&showSlicePlane);
+    ParameterGUI::draw(&slicePlaneSize);
+    ParameterGUI::draw(&sliceDepth);
 
     ImGui::NewLine();
 
@@ -333,7 +359,7 @@ struct MyApp : App {
       viewer.drawLattice(g);
     }
 
-    if (showBox.get()) {
+    if (showSlicePlane.get()) {
       viewer.drawBox(g);
     }
 

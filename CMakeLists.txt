@@ -8,8 +8,9 @@ set(APP_NAME app)
 # path to main source file
 add_executable(${APP_NAME}
   src/main.cpp
-  src/Crystal.hpp
-  src/Crystal.cpp
+  src/Lattice.hpp
+  src/Slice.hpp
+  src/CrystalViewer.hpp
 )
 
 # add allolib as a subdirectory to the project
