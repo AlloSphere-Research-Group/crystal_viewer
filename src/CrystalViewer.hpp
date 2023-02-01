@@ -44,12 +44,7 @@
 class CrystalViewer {
 public:
   void init() {
-    addSphere(sphereMesh, sphereSize);
-    sphereMesh.update();
-  }
-
-  void setLatticeSphereSize(float newSize) {
-    sphereMesh.fitToSphere(newSize);
+    addSphere(sphereMesh, 1.0);
     sphereMesh.update();
   }
 
@@ -59,24 +54,24 @@ public:
       auto newLattice = std::make_shared<Lattice<3>>(lattice);
       auto newSlice = std::make_shared<Slice<3, 2>>(slice, newLattice);
 
-      lattice = std::static_pointer_cast<AbstractLattice>(newLattice);
-      slice = std::static_pointer_cast<AbtractSlice>(newSlice);
+      lattice = newLattice;
+      slice = newSlice;
       break;
     }
     case 4: {
       auto newLattice = std::make_shared<Lattice<4>>(lattice);
       auto newSlice = std::make_shared<Slice<4, 2>>(slice, newLattice);
 
-      lattice = std::static_pointer_cast<AbstractLattice>(newLattice);
-      slice = std::static_pointer_cast<AbtractSlice>(newSlice);
+      lattice = newLattice;
+      slice = newSlice;
       break;
     }
     case 5: {
       auto newLattice = std::make_shared<Lattice<5>>(lattice);
       auto newSlice = std::make_shared<Slice<5, 2>>(slice, newLattice);
 
-      lattice = std::static_pointer_cast<AbstractLattice>(newLattice);
-      slice = std::static_pointer_cast<AbtractSlice>(newSlice);
+      lattice = newLattice;
+      slice = newSlice;
       break;
     }
     default:
@@ -92,22 +87,15 @@ public:
     updateSlice();
   }
 
-  void setEdgeThreshold(float edgeThreshold) {
-    slice->setEdgeThreshold(edgeThreshold);
-    updateSlice();
-  }
-
   int getDim() { return dim; }
 
   float getBasis(int basisNum, unsigned int vecIdx) {
     return lattice->getBasis(basisNum, vecIdx);
   }
 
-  void setBasis(float value, int basisNum, unsigned int vecIdx,
-                bool callUpdate = true) {
+  void setBasis(float value, int basisNum, unsigned int vecIdx) {
     lattice->setBasis(value, basisNum, vecIdx);
-    // TODO: add autoupdate to slice
-    if (callUpdate) {
+    if (autoUpdate) {
       updateSlice();
     }
   }
@@ -122,41 +110,59 @@ public:
     updateSlice();
   }
 
-  void updateLattice() { lattice->update(); }
+  inline void updateLattice() { lattice->update(); }
+
+  void addParticle(std::vector<float> &coord) { lattice->addParticle(coord); }
 
   float getMiller(int millerNum, unsigned int index) {
     return slice->getMiller(millerNum, index);
   }
 
-  void setMiller(float value, int millerNum, unsigned index,
-                 bool callUpdate = true) {
-    slice->setMiller(value, millerNum, index, callUpdate);
+  void setMiller(float value, int millerNum, unsigned index) {
+    slice->setMiller(value, millerNum, index);
   }
 
-  void roundMiller(bool callUpdate = true) { slice->roundMiller(callUpdate); }
+  void roundMiller() { slice->roundMiller(); }
 
   Vec3f getNormal() { return slice->getNormal(); }
 
+  // TODO: see if var can be localized to viewer
   void setWindow(float windowSize, float windowDepth) {
     slice->setWindow(windowSize, windowDepth);
   }
 
-  void updateSlice() { slice->update(); }
+  inline void updateSlice() { slice->update(); }
 
   void drawLattice(Graphics &g) {
-    g.color(1.f, 0.1f);
-    lattice->drawLattice(g, sphereMesh);
+    g.color(latticeSphereColor);
+    lattice->drawLattice(g, sphereMesh, latticeSphereSize);
+  }
+
+  void drawLatticeEdges(Graphics &g) {
+    g.color(latticeEdgeColor);
+    lattice->drawEdges(g);
+  }
+
+  void drawLatticeParticles(Graphics &g) {
+    g.color(1.f, 0.3f, 0.3f, 1.f);
+    lattice->drawParticles(g, sphereMesh, latticeSphereSize);
   }
 
   void drawSlice(Graphics &g) {
-    g.color(0.f, 0.f, 1.f, 0.3f);
+    g.color(slicePlaneColor);
     slice->drawPlane(g);
 
-    g.color(1.f, 0.8f);
-    slice->drawSlice(g, sphereMesh);
+    g.color(sliceSphereColor);
+    slice->drawSlice(g, sphereMesh, sliceSphereSize);
+  }
+
+  void drawSliceEdges(Graphics &g) {
+    g.color(sliceEdgeColor);
+    slice->drawEdges(g);
   }
 
   void drawBox(Graphics &g) {
+    // TODO: edit box colors
     g.color(0.3f, 0.3f, 1.0f, 0.1f);
     slice->drawBox(g);
 
@@ -168,20 +174,50 @@ public:
 
   void exportSliceJson(std::string &filePath) { slice->exportToJson(filePath); }
 
+  void setAutoUpdate(const bool &update) {
+    autoUpdate = update;
+    lattice->autoUpdate = update;
+    slice->autoUpdate = update;
+  }
+
+  void enableLatticeEdges(const bool &value) { lattice->enableEdges = value; }
+
+  void enableSliceEdges(const bool &value) { slice->enableEdges = value; }
+
+  void setLatticeSphereSize(const float &newSize) {
+    latticeSphereSize = newSize;
+  }
+  void setLatticeSphereColor(const Color &newColor) {
+    latticeSphereColor = newColor;
+  }
+  void setLatticeEdgeColor(const Color &newColor) {
+    latticeEdgeColor = newColor;
+  }
+  void setSliceSphereSize(const float &newSize) { sliceSphereSize = newSize; }
+  void setSliceSphereColor(const Color &newColor) {
+    sliceSphereColor = newColor;
+  }
+  void setSliceEdgeColor(const Color &newColor) { sliceEdgeColor = newColor; }
+  void setSlicePlaneSize(const float &newSize) { slicePlaneSize = newSize; }
+  void setSlicePlaneColor(const Color &newColor) { slicePlaneColor = newColor; }
+
 private:
   int dim{3};
+  bool autoUpdate{true};
 
   std::shared_ptr<AbstractLattice> lattice;
-  std::shared_ptr<AbtractSlice> slice;
+  std::shared_ptr<AbstractSlice> slice;
 
   VAOMesh sphereMesh;
 
-  float sphereSize{0.02};
-
-  Color latticeSphereColor;
-  Color latticeEdgeColor;
-  Color sliceSphereColor;
-  Color sliceEdgeColor;
+  float latticeSphereSize{0.02f};
+  Color latticeSphereColor{1.f, 0.8f};
+  Color latticeEdgeColor{1.f, 0.5f};
+  float sliceSphereSize{0.04f};
+  Color sliceSphereColor{1.f};
+  Color sliceEdgeColor{1.f, 0.5f};
+  float slicePlaneSize{15.f};
+  Color slicePlaneColor{0.3f, 0.3f, 1.f, 0.3f};
 };
 
 #endif // CRYSTAL_VIEWER_HPP

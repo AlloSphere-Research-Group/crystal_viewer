@@ -37,24 +37,25 @@
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
 
-struct AbtractSlice {
+struct AbstractSlice {
   int latticeDim;
   int sliceDim;
-  float edgeThreshold{1.f};
+  bool autoUpdate{true};
+  bool enableEdges{false};
   float windowSize{15.f};
   float windowDepth{0.f};
 
-  virtual ~AbtractSlice(){};
+  virtual ~AbstractSlice(){};
 
   virtual float getMiller(int millerNum, unsigned int index) = 0;
-  virtual void setMiller(float value, int millerNum, unsigned int index,
-                         bool callUpdate = true) = 0;
-  virtual void roundMiller(bool callUpdate = true) = 0;
-  virtual void setEdgeThreshold(float newEdgeThreshold) = 0;
+  virtual void setMiller(float value, int millerNum, unsigned int index) = 0;
+  virtual void roundMiller() = 0;
   virtual Vec3f getNormal() = 0;
   virtual void setWindow(float newWindowSize, float newWindowDepth) = 0;
   virtual void update() = 0;
-  virtual void drawSlice(Graphics &g, VAOMesh &mesh) = 0;
+  virtual void drawSlice(Graphics &g, VAOMesh &mesh,
+                         const float &sphereSize) = 0;
+  virtual void drawEdges(Graphics &g) = 0;
   virtual void drawPlane(Graphics &g) = 0;
   virtual void drawBox(Graphics &g) = 0;
   virtual void drawBoxNodes(Graphics &g, VAOMesh &mesh) = 0;
@@ -62,7 +63,7 @@ struct AbtractSlice {
   virtual void exportToJson(std::string &filePath) = 0;
 };
 
-template <int N, int M> struct Slice : AbtractSlice {
+template <int N, int M> struct Slice : AbstractSlice {
   Lattice<N> *lattice;
 
   std::vector<Vec<N, float>> millerIdx;
@@ -86,7 +87,7 @@ template <int N, int M> struct Slice : AbtractSlice {
     }
   }
 
-  Slice(std::shared_ptr<AbtractSlice> oldSlice,
+  Slice(std::shared_ptr<AbstractSlice> oldSlice,
         std::shared_ptr<Lattice<N>> latticePtr) {
     latticeDim = N;
     sliceDim = M;
@@ -126,8 +127,7 @@ template <int N, int M> struct Slice : AbtractSlice {
     return millerIdx[millerNum][index];
   }
 
-  virtual void setMiller(float value, int millerNum, unsigned int index,
-                         bool callUpdate = true) {
+  virtual void setMiller(float value, int millerNum, unsigned int index) {
     if (millerNum >= N - M || index >= N) {
       std::cerr << "Error: Miller write index out of bounds" << std::endl;
       return;
@@ -135,24 +135,20 @@ template <int N, int M> struct Slice : AbtractSlice {
 
     millerIdx[millerNum][index] = value;
 
-    if (callUpdate) {
+    if (autoUpdate) {
       update();
     }
   }
 
-  virtual void roundMiller(bool callUpdate = true) {
+  virtual void roundMiller() {
     for (auto &miller : millerIdx) {
       for (auto &v : miller) {
         v = std::round(v);
       }
     }
-    if (callUpdate) {
+    if (autoUpdate) {
       update();
     }
-  }
-
-  virtual void setEdgeThreshold(float newEdgeThreshold) {
-    edgeThreshold = newEdgeThreshold;
   }
 
   virtual Vec3f getNormal() {
@@ -232,14 +228,6 @@ template <int N, int M> struct Slice : AbtractSlice {
     boxEdges.reset();
     boxEdges.primitive(Mesh::LINES);
 
-    // for (int i = 0; i < planeVertices.size(); ++i) {
-    //   for (int j = i + 1; j < planeVertices.size(); ++j) {
-    //     if ((planeVertices[i] - planeVertices[j]).magSqr() < edgeThreshold) {
-    //       planeEdges.vertex(planeVertices[i]);
-    //       planeEdges.vertex(planeVertices[j]);
-    //     }
-    //   }
-    // }
     for (auto &e : lattice->edgeIdx) {
       // auto it1 = std::find_if(
       //     boxVertices.begin(), boxVertices.end(),
@@ -271,18 +259,18 @@ template <int N, int M> struct Slice : AbtractSlice {
     boxEdges.update();
   }
 
-  virtual void drawSlice(Graphics &g, VAOMesh &mesh) {
+  virtual void drawSlice(Graphics &g, VAOMesh &mesh, const float &sphereSize) {
     for (auto &v : planeVertices) {
       g.pushMatrix();
       // TODO: consider projection
       g.translate(v[0], v[1], v[2]);
-      g.scale(2.f);
+      g.scale(sphereSize);
       g.draw(mesh);
       g.popMatrix();
     }
-
-    g.draw(planeEdges);
   }
+
+  virtual void drawEdges(Graphics &g) { g.draw(planeEdges); }
 
   virtual void drawPlane(Graphics &g) {
     g.pushMatrix();
@@ -311,7 +299,7 @@ template <int N, int M> struct Slice : AbtractSlice {
       g.translate(lattice->vertices[bv.first][0],
                   lattice->vertices[bv.first][1],
                   lattice->vertices[bv.first][2]);
-      g.scale(2.f);
+      g.scale(0.04f);
       g.draw(mesh);
       g.popMatrix();
     }

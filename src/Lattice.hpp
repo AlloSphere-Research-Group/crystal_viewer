@@ -54,8 +54,13 @@ struct AbstractLattice {
   virtual void resetBasis() = 0;
   virtual float getBasis(unsigned int basisNum, unsigned int vecIdx) = 0;
   virtual void createLattice(int size) = 0;
+  virtual void addParticle(std::vector<float> &coord) = 0;
   virtual void update() = 0;
-  virtual void drawLattice(Graphics &g, VAOMesh &mesh) = 0;
+  virtual void drawLattice(Graphics &g, VAOMesh &mesh,
+                           const float &sphereSize) = 0;
+  virtual void drawEdges(Graphics &g) = 0;
+  virtual void drawParticles(Graphics &g, VAOMesh &mesh,
+                             const float &sphereSize) = 0;
 
   int dim;
   int latticeSize{1};
@@ -69,6 +74,9 @@ template <int N> struct Lattice : AbstractLattice {
   std::vector<Vec<N, float>> basis;
   std::vector<Vec<N, int>> vertexIdx;
   std::vector<Vec<N, float>> vertices;
+
+  std::vector<Vec<N, float>> particles;
+  std::vector<Vec<N, float>> particleCoords;
 
   std::vector<std::pair<int, int>> edgeIdx;
   VAOMesh edges;
@@ -171,6 +179,28 @@ template <int N> struct Lattice : AbstractLattice {
     update();
   }
 
+  virtual void addParticle(std::vector<float> &coord) {
+    if (coord.size() != N) {
+      std::cerr << "Coord has wrong dimensions" << std::endl;
+      return;
+    }
+
+    Vec<N, float> newParticle;
+    for (int i = 0; i < N; ++i) {
+      newParticle[i] = coord[i];
+    }
+    particles.push_back(newParticle);
+
+    newParticle.set(0);
+    for (int i = 0; i < N; ++i) {
+      newParticle += basis[i] * coord[i];
+    }
+
+    for (auto &v : vertices) {
+      particleCoords.push_back(v + newParticle);
+    }
+  }
+
   void computeEdges() {
     for (int i = 0; i < vertexIdx.size() - 1; ++i) {
       for (int j = i + 1; j < vertexIdx.size(); ++j) {
@@ -257,18 +287,31 @@ template <int N> struct Lattice : AbstractLattice {
     return newPoint;
   }
 
-  virtual void drawLattice(Graphics &g, VAOMesh &mesh) {
+  virtual void drawLattice(Graphics &g, VAOMesh &mesh,
+                           const float &sphereSize) {
     // for (auto &v : projectedVertices) {
     for (auto &v : vertices) {
       g.pushMatrix();
       // TODO: project
       g.translate(v[0], v[1], v[2]);
       // g.translate(v);
+      g.scale(sphereSize);
       g.draw(mesh);
       g.popMatrix();
     }
+  }
 
-    g.draw(edges);
+  virtual void drawEdges(Graphics &g) { g.draw(edges); }
+
+  virtual void drawParticles(Graphics &g, VAOMesh &mesh,
+                             const float &sphereSize) {
+    for (auto &v : particleCoords) {
+      g.pushMatrix();
+      g.translate(v[0], v[1], v[2]);
+      g.scale(sphereSize);
+      g.draw(mesh);
+      g.popMatrix();
+    }
   }
 };
 

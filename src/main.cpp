@@ -3,7 +3,6 @@
 #include <vector>
 
 #include "al/app/al_App.hpp"
-#include "al/graphics/al_Shapes.hpp"
 #include "al/ui/al_ParameterGUI.hpp"
 
 #include "CrystalViewer.hpp"
@@ -17,14 +16,7 @@ struct MyApp : App {
   Trigger manualUpdate{"Update", ""};
 
   ParameterInt crystalDim{"crystalDim", "", 3, 3, 5};
-
-  ParameterBool showLattice{"showLattice", "", 1};
   ParameterInt latticeSize{"latticeSize", "", 1, 1, 5};
-  ParameterBool showLatticeEdge{"showLatticeEdge", "", 1};
-
-  Parameter latticeSphereSize{"latticeSphereSize", "", 0.02, 0.001, 1};
-  ParameterColor latticeSphereColor{"latticeSphereColor", ""};
-  ParameterColor latticeEdgeColor{"latticeEdgeColor", ""};
 
   ParameterInt basisNum{"basisNum", "", 0, 0, 2};
   Parameter basis1{"basis1", "", 1, -5, 5};
@@ -32,22 +24,36 @@ struct MyApp : App {
   Parameter basis3{"basis3", "", 0, -5, 5};
   Parameter basis4{"basis4", "", 0, -5, 5};
   Parameter basis5{"basis5", "", 0, -5, 5};
-
   Trigger resetBasis{"resetBasis", ""};
 
+  Parameter particle1{"particle1", "", 0.5, -1, 1};
+  Parameter particle2{"particle2", "", 0.5, -1, 1};
+  Parameter particle3{"particle3", "", 0.5, -1, 1};
+  Parameter particle4{"particle4", "", 0.5, -1, 1};
+  Parameter particle5{"particle5", "", 0.5, -1, 1};
+  Trigger addParticle{"addParticle", ""};
+
+  ParameterBool showLattice{"showLattice", "", 1};
+  ParameterBool showLatticeEdge{"showLatticeEdge", "", 1};
   ParameterBool showSlice{"showSlice", "", 1};
+  ParameterBool showSliceEdge{"showSliceEdge", "", 0};
+  ParameterBool showSlicePlane{"showSlicePlane", "", 0};
+  ParameterBool lockCameraToSlice{"lockCameraToSlice", "", 0};
+
+  Parameter latticeSphereSize{"latticeSphereSize", "", 0.02, 0.001, 1};
+  ParameterColor latticeSphereColor{"latticeSphereColor", "", Color(1.f, 0.8f)};
+  ParameterColor latticeEdgeColor{"latticeEdgeColor", "", Color(1.f, 0.5f)};
+
+  Parameter sliceSphereSize{"sliceSphereSize", 0.04, 0.001, 1};
+  ParameterColor sliceSphereColor{"sliceSphereColor", "", Color(1.f)};
+  ParameterColor sliceEdgeColor{"sliceEdgeColor", "", Color(1.f, 0.5f)};
+
+  Parameter slicePlaneSize{"slicePlaneSize", "", 15.f, 0, 30.f};
+  ParameterColor slicePlaneColor{"slicePlaneColor", "",
+                                 Color(0.3f, 0.3f, 1.f, 0.3f)};
+
   ParameterInt sliceDim{"sliceDim", "", 2, 2, 2};
   Parameter sliceDepth{"sliceDepth", "", 0, 0, 10.f};
-  ParameterBool showSliceEdge{"showSliceEdge", "", 0};
-
-  Parameter sliceSphereSize{"sliceSphereSize", 0.02, 0.001, 1};
-  ParameterColor sliceSphereColor{"sliceSphereColor", ""};
-  ParameterColor sliceEdgeColor{"sliceEdgeColor", ""};
-  ParameterBool showSlicePlane{"showSlicePlane", "", 0};
-  Parameter slicePlaneSize{"slicePlaneSize", "", 15.f, 0, 30.f};
-  ParameterColor slicePlaneColor{"slicePlaneColor", ""};
-
-  ParameterBool lockCameraToSlice{"lockCameraToSlice", "", 0};
 
   ParameterInt millerNum{"millerNum", "", 0, 0, 0};
   ParameterBool intMiller{"intMiller", ""};
@@ -58,7 +64,8 @@ struct MyApp : App {
   Parameter miller5{"miller5", "", 0, -5, 5};
 
   std::string dataDir;
-  char fileName[128] = "01";
+  char filePath[128]{};
+  char fileName[128]{"01"};
   Trigger exportTxt{"ExportTxt", ""};
   Trigger exportJson{"ExportJson", ""};
 
@@ -74,6 +81,7 @@ struct MyApp : App {
     // remove bin directory from path
     auto posBin = dataDir.find("bin");
     dataDir = dataDir.substr(0, posBin);
+
     dataDir = File::conformPathToOS(dataDir + "data/");
 
     if (!al::File::exists(dataDir)) {
@@ -83,8 +91,21 @@ struct MyApp : App {
       }
     }
 
-    // autoUpdate.registerChangeCallback(
-    //     [&](bool value) { viewer.setAutoUpdate(value); });
+    dataDir.copy(filePath, sizeof filePath - 1);
+
+    latticeSphereColor.setHint("showAlpha", true);
+    latticeSphereColor.setHint("hsv", true);
+    latticeEdgeColor.setHint("showAlpha", true);
+    latticeEdgeColor.setHint("hsv", true);
+    sliceSphereColor.setHint("showAlpha", true);
+    sliceSphereColor.setHint("hsv", true);
+    sliceEdgeColor.setHint("showAlpha", true);
+    sliceEdgeColor.setHint("hsv", true);
+    slicePlaneColor.setHint("showAlpha", true);
+    slicePlaneColor.setHint("hsv", true);
+
+    autoUpdate.registerChangeCallback(
+        [&](bool value) { viewer.setAutoUpdate(value); });
     manualUpdate.registerChangeCallback([&](bool value) { viewer.update(); });
 
     crystalDim.registerChangeCallback([&](int value) {
@@ -109,36 +130,69 @@ struct MyApp : App {
     latticeSize.registerChangeCallback(
         [&](int value) { viewer.createLattice(value); });
 
-    latticeSphereSize.registerChangeCallback(
-        [&](float value) { viewer.setLatticeSphereSize(value); });
-
     basisNum.registerChangeCallback([&](int value) { readBasis(value); });
 
     // TODO: add in callUpdate
-    basis1.registerChangeCallback([&](float value) {
-      viewer.setBasis(value, basisNum.get(), 0, autoUpdate.get());
-    });
+    basis1.registerChangeCallback(
+        [&](float value) { viewer.setBasis(value, basisNum.get(), 0); });
 
-    basis2.registerChangeCallback([&](float value) {
-      viewer.setBasis(value, basisNum.get(), 1, autoUpdate.get());
-    });
+    basis2.registerChangeCallback(
+        [&](float value) { viewer.setBasis(value, basisNum.get(), 1); });
 
-    basis3.registerChangeCallback([&](float value) {
-      viewer.setBasis(value, basisNum.get(), 2, autoUpdate.get());
-    });
+    basis3.registerChangeCallback(
+        [&](float value) { viewer.setBasis(value, basisNum.get(), 2); });
 
-    basis4.registerChangeCallback([&](float value) {
-      viewer.setBasis(value, basisNum.get(), 3, autoUpdate.get());
-    });
+    basis4.registerChangeCallback(
+        [&](float value) { viewer.setBasis(value, basisNum.get(), 3); });
 
-    basis5.registerChangeCallback([&](float value) {
-      viewer.setBasis(value, basisNum.get(), 4, autoUpdate.get());
-    });
+    basis5.registerChangeCallback(
+        [&](float value) { viewer.setBasis(value, basisNum.get(), 4); });
 
     resetBasis.registerChangeCallback([&](bool value) {
       viewer.resetBasis();
       readBasis(basisNum.get());
     });
+
+    addParticle.registerChangeCallback([&](bool value) {
+      std::vector<float> coord;
+      coord.push_back(particle1.get());
+      coord.push_back(particle2.get());
+      coord.push_back(particle3.get());
+      if (crystalDim.get() > 3) {
+        coord.push_back(particle4.get());
+        if (crystalDim.get() > 4) {
+          coord.push_back(particle5.get());
+        }
+      }
+      viewer.addParticle(coord);
+    });
+
+    showLatticeEdge.registerChangeCallback(
+        [&](bool value) { viewer.enableLatticeEdges(value); });
+
+    latticeSphereSize.registerChangeCallback(
+        [&](float value) { viewer.setLatticeSphereSize(value); });
+
+    latticeSphereColor.registerChangeCallback(
+        [&](Color value) { viewer.setLatticeSphereColor(value); });
+
+    latticeEdgeColor.registerChangeCallback(
+        [&](Color value) { viewer.setLatticeEdgeColor(value); });
+
+    sliceSphereSize.registerChangeCallback(
+        [&](float value) { viewer.setSliceSphereSize(value); });
+
+    sliceSphereColor.registerChangeCallback(
+        [&](Color value) { viewer.setSliceSphereColor(value); });
+
+    sliceEdgeColor.registerChangeCallback(
+        [&](Color value) { viewer.setSliceEdgeColor(value); });
+
+    slicePlaneSize.registerChangeCallback(
+        [&](float value) { viewer.setWindow(value, sliceDepth.get()); });
+
+    slicePlaneColor.registerChangeCallback(
+        [&](Color value) { viewer.setSlicePlaneColor(value); });
 
     sliceDim.registerChangeCallback([&](int value) {
       millerNum.max(crystalDim.get() - value - 1);
@@ -149,6 +203,11 @@ struct MyApp : App {
       // TODO: add 3d slice transition
     });
 
+    sliceDepth.registerChangeCallback([&](float value) {
+      viewer.setWindow(slicePlaneSize.get(), value);
+      viewer.updateSlice();
+    });
+
     intMiller.registerChangeCallback([&](float value) {
       if (value) {
         miller1.setHint("input", -1);
@@ -157,7 +216,7 @@ struct MyApp : App {
         miller4.setHint("input", -1);
         miller5.setHint("input", -1);
 
-        viewer.roundMiller(autoUpdate.get());
+        viewer.roundMiller();
         readMiller(millerNum.get());
       } else {
         miller1.removeHint("input");
@@ -170,33 +229,20 @@ struct MyApp : App {
 
     millerNum.registerChangeCallback([&](int value) { readMiller(value); });
 
-    miller1.registerChangeCallback([&](float value) {
-      viewer.setMiller(value, millerNum.get(), 0, autoUpdate.get());
-    });
+    miller1.registerChangeCallback(
+        [&](float value) { viewer.setMiller(value, millerNum.get(), 0); });
 
-    miller2.registerChangeCallback([&](float value) {
-      viewer.setMiller(value, millerNum.get(), 1, autoUpdate.get());
-    });
+    miller2.registerChangeCallback(
+        [&](float value) { viewer.setMiller(value, millerNum.get(), 1); });
 
-    miller3.registerChangeCallback([&](float value) {
-      viewer.setMiller(value, millerNum.get(), 2, autoUpdate.get());
-    });
+    miller3.registerChangeCallback(
+        [&](float value) { viewer.setMiller(value, millerNum.get(), 2); });
 
-    miller4.registerChangeCallback([&](float value) {
-      viewer.setMiller(value, millerNum.get(), 3, autoUpdate.get());
-    });
+    miller4.registerChangeCallback(
+        [&](float value) { viewer.setMiller(value, millerNum.get(), 3); });
 
-    miller5.registerChangeCallback([&](float value) {
-      viewer.setMiller(value, millerNum.get(), 4, autoUpdate.get());
-    });
-
-    sliceDepth.registerChangeCallback([&](float value) {
-      viewer.setWindow(slicePlaneSize.get(), value);
-      viewer.updateSlice();
-    });
-
-    slicePlaneSize.registerChangeCallback(
-        [&](float value) { viewer.setWindow(value, sliceDepth.get()); });
+    miller5.registerChangeCallback(
+        [&](float value) { viewer.setMiller(value, millerNum.get(), 4); });
 
     exportTxt.registerChangeCallback([&](bool value) {
       std::string newPath = File::conformPathToOS(dataDir + fileName);
@@ -244,17 +290,7 @@ struct MyApp : App {
     }
 
     ParameterGUI::draw(&crystalDim);
-
-    ParameterGUI::draw(&showLattice);
     ParameterGUI::draw(&latticeSize);
-    ParameterGUI::draw(&showLatticeEdge);
-
-    if (ImGui::CollapsingHeader("Lattice Display Settings",
-                                ImGuiTreeNodeFlags_CollapsingHeader)) {
-      ParameterGUI::draw(&latticeSphereSize);
-      ParameterGUI::draw(&latticeSphereColor);
-      ParameterGUI::draw(&latticeEdgeColor);
-    }
 
     if (ImGui::CollapsingHeader("Edit Basis Vector",
                                 ImGuiTreeNodeFlags_CollapsingHeader)) {
@@ -283,12 +319,63 @@ struct MyApp : App {
       ImGui::Unindent();
     }
 
-    ImGui::NewLine();
+    if (ImGui::CollapsingHeader("Add Particles",
+                                ImGuiTreeNodeFlags_CollapsingHeader)) {
+      ParameterGUI::draw(&particle1);
+      ParameterGUI::draw(&particle2);
+      ParameterGUI::draw(&particle3);
+      if (crystalDim.get() > 3) {
+        ParameterGUI::draw(&particle4);
+        if (crystalDim.get() > 4) {
+          ParameterGUI::draw(&particle5);
+        }
+      }
+      ParameterGUI::draw(&addParticle);
+    }
+
+    ParameterGUI::draw(&showLattice);
+    if (showLattice.get()) {
+      ImGui::SameLine();
+      ParameterGUI::draw(&showLatticeEdge);
+    }
 
     ParameterGUI::draw(&showSlice);
+    ImGui::SameLine();
+    ParameterGUI::draw(&showSliceEdge);
+
+    ParameterGUI::draw(&showSlicePlane);
+    ImGui::SameLine();
     ParameterGUI::draw(&lockCameraToSlice);
+
+    if (ImGui::CollapsingHeader("Edit Display Settings",
+                                ImGuiTreeNodeFlags_CollapsingHeader)) {
+      if (ImGui::BeginTabBar("displaySettings", ImGuiTabBarFlags_None)) {
+        if (ImGui::BeginTabItem("Lattice")) {
+          ParameterGUI::draw(&latticeSphereSize);
+          ParameterGUI::draw(&latticeSphereColor);
+          ParameterGUI::draw(&latticeEdgeColor);
+          ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Slice")) {
+          ParameterGUI::draw(&sliceSphereSize);
+          ParameterGUI::draw(&sliceSphereColor);
+          ParameterGUI::draw(&sliceEdgeColor);
+          ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("SlicingPlane")) {
+          ParameterGUI::draw(&slicePlaneSize);
+          ParameterGUI::draw(&slicePlaneColor);
+          ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+      }
+    }
+
+    ImGui::NewLine();
+
     if (showSlice.get()) {
       ParameterGUI::draw(&sliceDim);
+      ParameterGUI::draw(&sliceDepth);
 
       ImGui::NewLine();
 
@@ -319,13 +406,12 @@ struct MyApp : App {
 
     ImGui::NewLine();
 
-    ParameterGUI::draw(&showSlicePlane);
-    ParameterGUI::draw(&slicePlaneSize);
-    ParameterGUI::draw(&sliceDepth);
-
-    ImGui::NewLine();
-
-    ImGui::Text("%s", dataDir.c_str());
+    ImGui::InputText("filePath", filePath, IM_ARRAYSIZE(filePath));
+    if (ImGui::IsItemActive()) {
+      navControl().active(false);
+    } else {
+      navControl().active(true);
+    }
     ImGui::InputText("fileName", fileName, IM_ARRAYSIZE(fileName));
     if (ImGui::IsItemActive()) {
       navControl().active(false);
@@ -356,14 +442,22 @@ struct MyApp : App {
     }
 
     if (showLattice.get()) {
+      if (showLatticeEdge.get()) {
+        viewer.drawLatticeEdges(g);
+      }
       viewer.drawLattice(g);
     }
+
+    viewer.drawLatticeParticles(g);
 
     if (showSlicePlane.get()) {
       viewer.drawBox(g);
     }
 
     if (showSlice.get()) {
+      if (showSliceEdge.get()) {
+        viewer.drawSliceEdges(g);
+      }
       viewer.drawSlice(g);
     }
 
