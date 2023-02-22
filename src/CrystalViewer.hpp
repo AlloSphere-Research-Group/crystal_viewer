@@ -112,13 +112,19 @@ public:
 
   inline void updateLattice() { lattice->update(); }
 
-  void addParticle(std::vector<float> &coord) { lattice->addParticle(coord); }
+  void setParticle(float value, unsigned int index) {
+    lattice->setParticle(value, index);
+  }
+
+  void addParticle() { lattice->addParticle(); }
+
+  void removeParticle() { lattice->removeParticle(); }
 
   float getMiller(int millerNum, unsigned int index) {
     return slice->getMiller(millerNum, index);
   }
 
-  void setMiller(float value, int millerNum, unsigned index) {
+  void setMiller(float value, int millerNum, unsigned int index) {
     slice->setMiller(value, millerNum, index);
   }
 
@@ -144,8 +150,7 @@ public:
   }
 
   void drawLatticeParticles(Graphics &g) {
-    g.color(1.f, 0.3f, 0.3f, 1.f);
-    lattice->drawParticles(g, sphereMesh, latticeSphereSize);
+    lattice->drawParticles(g, sphereMesh);
   }
 
   void drawSlice(Graphics &g) {
@@ -184,22 +189,38 @@ public:
 
   void enableSliceEdges(const bool &value) { slice->enableEdges = value; }
 
-  void setLatticeSphereSize(const float &newSize) {
+  inline void setParticlesphereSize(const float &newSize) {
+    lattice->setParticleSize(newSize);
+  }
+
+  inline void setParticleSphereColor(const Color &newColor) {
+    lattice->setParticleColor(newColor);
+  }
+
+  inline void setLatticeSphereSize(const float &newSize) {
     latticeSphereSize = newSize;
   }
-  void setLatticeSphereColor(const Color &newColor) {
+  inline void setLatticeSphereColor(const Color &newColor) {
     latticeSphereColor = newColor;
   }
-  void setLatticeEdgeColor(const Color &newColor) {
+  inline void setLatticeEdgeColor(const Color &newColor) {
     latticeEdgeColor = newColor;
   }
-  void setSliceSphereSize(const float &newSize) { sliceSphereSize = newSize; }
-  void setSliceSphereColor(const Color &newColor) {
+  inline void setSliceSphereSize(const float &newSize) {
+    sliceSphereSize = newSize;
+  }
+  inline void setSliceSphereColor(const Color &newColor) {
     sliceSphereColor = newColor;
   }
-  void setSliceEdgeColor(const Color &newColor) { sliceEdgeColor = newColor; }
-  void setSlicePlaneSize(const float &newSize) { slicePlaneSize = newSize; }
-  void setSlicePlaneColor(const Color &newColor) { slicePlaneColor = newColor; }
+  inline void setSliceEdgeColor(const Color &newColor) {
+    sliceEdgeColor = newColor;
+  }
+  inline void setSlicePlaneSize(const float &newSize) {
+    slicePlaneSize = newSize;
+  }
+  inline void setSlicePlaneColor(const Color &newColor) {
+    slicePlaneColor = newColor;
+  }
 
 private:
   int dim{3};
@@ -210,6 +231,7 @@ private:
 
   VAOMesh sphereMesh;
 
+  float particleSphereSize{0.02f};
   float latticeSphereSize{0.02f};
   Color latticeSphereColor{1.f, 0.8f};
   Color latticeEdgeColor{1.f, 0.5f};

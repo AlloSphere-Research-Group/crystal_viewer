@@ -26,12 +26,16 @@ struct MyApp : App {
   Parameter basis5{"basis5", "", 0, -5, 5};
   Trigger resetBasis{"resetBasis", ""};
 
-  Parameter particle1{"particle1", "", 0.5, -1, 1};
-  Parameter particle2{"particle2", "", 0.5, -1, 1};
-  Parameter particle3{"particle3", "", 0.5, -1, 1};
-  Parameter particle4{"particle4", "", 0.5, -1, 1};
-  Parameter particle5{"particle5", "", 0.5, -1, 1};
+  Parameter particle1{"particle1", "", 0.5, 0, 1};
+  Parameter particle2{"particle2", "", 0.5, 0, 1};
+  Parameter particle3{"particle3", "", 0.5, 0, 1};
+  Parameter particle4{"particle4", "", 0.5, 0, 1};
+  Parameter particle5{"particle5", "", 0.5, 0, 1};
+  Parameter particleSphereSize{"particleSphereSize", "", 0.02, 0.001, 1};
+  ParameterColor particleSphereColor{"particleSphereColor", "",
+                                     Color(1.f, 0.2f, 0.2f, 0.8f)};
   Trigger addParticle{"addParticle", ""};
+  Trigger removeParticle{"removeParticle", ""};
 
   ParameterBool showLattice{"showLattice", "", 1};
   ParameterBool showLatticeEdge{"showLatticeEdge", "", 1};
@@ -93,6 +97,8 @@ struct MyApp : App {
 
     dataDir.copy(filePath, sizeof filePath - 1);
 
+    particleSphereColor.setHint("showAlpha", true);
+    particleSphereColor.setHint("hsv", true);
     latticeSphereColor.setHint("showAlpha", true);
     latticeSphereColor.setHint("hsv", true);
     latticeEdgeColor.setHint("showAlpha", true);
@@ -132,7 +138,6 @@ struct MyApp : App {
 
     basisNum.registerChangeCallback([&](int value) { readBasis(value); });
 
-    // TODO: add in callUpdate
     basis1.registerChangeCallback(
         [&](float value) { viewer.setBasis(value, basisNum.get(), 0); });
 
@@ -153,19 +158,32 @@ struct MyApp : App {
       readBasis(basisNum.get());
     });
 
-    addParticle.registerChangeCallback([&](bool value) {
-      std::vector<float> coord;
-      coord.push_back(particle1.get());
-      coord.push_back(particle2.get());
-      coord.push_back(particle3.get());
-      if (crystalDim.get() > 3) {
-        coord.push_back(particle4.get());
-        if (crystalDim.get() > 4) {
-          coord.push_back(particle5.get());
-        }
-      }
-      viewer.addParticle(coord);
-    });
+    particle1.registerChangeCallback(
+        [&](float value) { viewer.setParticle(value, 0); });
+
+    particle2.registerChangeCallback(
+        [&](float value) { viewer.setParticle(value, 1); });
+
+    particle3.registerChangeCallback(
+        [&](float value) { viewer.setParticle(value, 2); });
+
+    particle4.registerChangeCallback(
+        [&](float value) { viewer.setParticle(value, 3); });
+
+    particle5.registerChangeCallback(
+        [&](float value) { viewer.setParticle(value, 4); });
+
+    particleSphereSize.registerChangeCallback(
+        [&](float value) { viewer.setParticlesphereSize(value); });
+
+    particleSphereColor.registerChangeCallback(
+        [&](Color value) { viewer.setParticleSphereColor(value); });
+
+    addParticle.registerChangeCallback(
+        [&](bool value) { viewer.addParticle(); });
+
+    removeParticle.registerChangeCallback(
+        [&](bool value) { viewer.removeParticle(); });
 
     showLatticeEdge.registerChangeCallback(
         [&](bool value) { viewer.enableLatticeEdges(value); });
@@ -330,8 +348,14 @@ struct MyApp : App {
           ParameterGUI::draw(&particle5);
         }
       }
+      ParameterGUI::draw(&particleSphereSize);
+      ParameterGUI::draw(&particleSphereColor);
       ParameterGUI::draw(&addParticle);
+      ImGui::SameLine();
+      ParameterGUI::draw(&removeParticle);
     }
+
+    ImGui::NewLine();
 
     ParameterGUI::draw(&showLattice);
     if (showLattice.get()) {

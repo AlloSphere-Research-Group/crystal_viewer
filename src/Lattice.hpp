@@ -54,28 +54,35 @@ struct AbstractLattice {
   virtual void resetBasis() = 0;
   virtual float getBasis(unsigned int basisNum, unsigned int vecIdx) = 0;
   virtual void createLattice(int size) = 0;
-  virtual void addParticle(std::vector<float> &coord) = 0;
+  virtual void setParticle(float value, unsigned int index) = 0;
+  virtual void setParticleSize(const float newSize) = 0;
+  virtual void setParticleColor(const Color &newColor) = 0;
+  virtual void addParticle() = 0;
+  virtual void removeParticle() = 0;
   virtual void update() = 0;
   virtual void drawLattice(Graphics &g, VAOMesh &mesh,
                            const float &sphereSize) = 0;
   virtual void drawEdges(Graphics &g) = 0;
-  virtual void drawParticles(Graphics &g, VAOMesh &mesh,
-                             const float &sphereSize) = 0;
+  virtual void drawParticles(Graphics &g, VAOMesh &mesh) = 0;
 
   int dim;
   int latticeSize{1};
   bool autoUpdate{true};
   bool enableEdges{false};
-  bool sizeChanged{false};
-  bool busy{false};
+
+  // bool sizeChanged{false};
+  // bool busy{false};
 };
 
 template <int N> struct Lattice : AbstractLattice {
   std::vector<Vec<N, float>> basis;
+
   std::vector<Vec<N, int>> vertexIdx;
   std::vector<Vec<N, float>> vertices;
 
   std::vector<Vec<N, float>> particles;
+  std::vector<Color> particleColors;
+  std::vector<float> particleSizes;
   std::vector<Vec<N, float>> particleCoords;
 
   std::vector<std::pair<int, int>> edgeIdx;
@@ -179,26 +186,50 @@ template <int N> struct Lattice : AbstractLattice {
     update();
   }
 
-  virtual void addParticle(std::vector<float> &coord) {
-    if (coord.size() != N) {
-      std::cerr << "Coord has wrong dimensions" << std::endl;
+  virtual void setParticle(float value, unsigned int index) {
+    if (particles.empty()) {
+      std::cerr << "no particles added" << std::endl;
       return;
     }
 
-    Vec<N, float> newParticle;
-    for (int i = 0; i < N; ++i) {
-      newParticle[i] = coord[i];
-    }
-    particles.push_back(newParticle);
+    particles.back()[index] = value;
 
-    newParticle.set(0);
-    for (int i = 0; i < N; ++i) {
-      newParticle += basis[i] * coord[i];
-    }
+    Vec<N, float> newCoord{0};
 
-    for (auto &v : vertices) {
-      particleCoords.push_back(v + newParticle);
+    for (int i = 0; i < N; ++i) {
+      newCoord += particles.back()[i] * basis[i];
     }
+    particleCoords.back() = newCoord;
+  }
+
+  virtual void setParticleSize(const float newSize) {
+    if (particles.empty()) {
+      std::cerr << "no particles added" << std::endl;
+      return;
+    }
+    particleSizes.back() = newSize;
+  }
+
+  virtual void setParticleColor(const Color &newColor) {
+    if (particles.empty()) {
+      std::cerr << "no particles added" << std::endl;
+      return;
+    }
+    particleColors.back() = newColor;
+  }
+
+  virtual void addParticle() {
+    particles.emplace_back();
+    particleColors.emplace_back(1.f, 0.2f, 0.2f, 0.8f);
+    particleSizes.emplace_back(0.02f);
+    particleCoords.emplace_back();
+  }
+
+  virtual void removeParticle() {
+    particles.pop_back();
+    particleColors.pop_back();
+    particleSizes.pop_back();
+    particleCoords.pop_back();
   }
 
   void computeEdges() {
@@ -303,13 +334,19 @@ template <int N> struct Lattice : AbstractLattice {
 
   virtual void drawEdges(Graphics &g) { g.draw(edges); }
 
-  virtual void drawParticles(Graphics &g, VAOMesh &mesh,
-                             const float &sphereSize) {
-    for (auto &v : particleCoords) {
+  virtual void drawParticles(Graphics &g, VAOMesh &mesh) {
+    for (auto &v : vertices) {
       g.pushMatrix();
       g.translate(v[0], v[1], v[2]);
-      g.scale(sphereSize);
-      g.draw(mesh);
+      for (int i = 0; i < particleCoords.size(); ++i) {
+        g.pushMatrix();
+        g.translate(particleCoords[i][0], particleCoords[i][1],
+                    particleCoords[i][2]);
+        g.color(particleColors[i]);
+        g.scale(particleSizes[i]);
+        g.draw(mesh);
+        g.popMatrix();
+      }
       g.popMatrix();
     }
   }
