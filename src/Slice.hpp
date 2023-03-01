@@ -263,7 +263,15 @@ template <int N, int M> struct Slice : AbstractSlice {
     for (auto &v : planeVertices) {
       g.pushMatrix();
       // TODO: consider projection
-      g.translate(v[0], v[1], v[2]);
+      if (lattice->viewAxis.size() == 3) {
+        g.translate(v[lattice->viewAxis[0]], v[lattice->viewAxis[1]],
+                    v[lattice->viewAxis[2]]);
+      } else if (lattice->viewAxis.size() == 2) {
+        g.translate(v[lattice->viewAxis[0]], v[lattice->viewAxis[1]]);
+      } else if (lattice->viewAxis.size() == 1) {
+        g.translate(v[lattice->viewAxis[0]], 0);
+      }
+      // g.translate(v[0], v[1], v[2]);
       g.scale(sphereSize);
       g.draw(mesh);
       g.popMatrix();

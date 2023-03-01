@@ -112,6 +112,14 @@ public:
 
   inline void updateLattice() { lattice->update(); }
 
+  void setAxis(std::vector<int> &newAxis) {
+    std::vector<int> axisIdx;
+    for (int i = 0; i < 3 && i < newAxis.size(); ++i) {
+      axisIdx.push_back(newAxis[i]);
+    }
+    lattice->setAxis(axisIdx);
+  }
+
   void setParticle(float value, unsigned int index) {
     lattice->setParticle(value, index);
   }

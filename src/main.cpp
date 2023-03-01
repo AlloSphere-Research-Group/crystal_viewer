@@ -26,6 +26,12 @@ struct MyApp : App {
   Parameter basis5{"basis5", "", 0, -5, 5};
   Trigger resetBasis{"resetBasis", ""};
 
+  ParameterBool axis1{"X", "", 1};
+  ParameterBool axis2{"Y", "", 1};
+  ParameterBool axis3{"Z", "", 1};
+  ParameterBool axis4{"W", "", 0};
+  ParameterBool axis5{"A5", "", 0};
+
   Parameter particle1{"particle1", "", 0.5, 0, 1};
   Parameter particle2{"particle2", "", 0.5, 0, 1};
   Parameter particle3{"particle3", "", 0.5, 0, 1};
@@ -156,6 +162,131 @@ struct MyApp : App {
     resetBasis.registerChangeCallback([&](bool value) {
       viewer.resetBasis();
       readBasis(basisNum.get());
+    });
+
+    axis1.registerChangeCallback([&](bool value) {
+      std::vector<int> newAxis;
+      if (value) {
+        newAxis.push_back(0);
+      }
+      if (axis2.get()) {
+        newAxis.push_back(1);
+      }
+      if (axis3.get()) {
+        newAxis.push_back(2);
+      }
+      if (crystalDim.get() > 3) {
+        if (axis4.get()) {
+          newAxis.push_back(3);
+        }
+        if (crystalDim.get() > 4) {
+          if (axis5.get()) {
+            newAxis.push_back(4);
+          }
+        }
+      }
+
+      viewer.setAxis(newAxis);
+    });
+
+    axis2.registerChangeCallback([&](bool value) {
+      std::vector<int> newAxis;
+      if (axis1.get()) {
+        newAxis.push_back(0);
+      }
+      if (value) {
+        newAxis.push_back(1);
+      }
+      if (axis3.get()) {
+        newAxis.push_back(2);
+      }
+      if (crystalDim.get() > 3) {
+        if (axis4.get()) {
+          newAxis.push_back(3);
+        }
+        if (crystalDim.get() > 4) {
+          if (axis5.get()) {
+            newAxis.push_back(4);
+          }
+        }
+      }
+
+      viewer.setAxis(newAxis);
+    });
+
+    axis3.registerChangeCallback([&](bool value) {
+      std::vector<int> newAxis;
+      if (axis1.get()) {
+        newAxis.push_back(0);
+      }
+      if (axis2.get()) {
+        newAxis.push_back(1);
+      }
+      if (value) {
+        newAxis.push_back(2);
+      }
+      if (crystalDim.get() > 3) {
+        if (axis4.get()) {
+          newAxis.push_back(3);
+        }
+        if (crystalDim.get() > 4) {
+          if (axis5.get()) {
+            newAxis.push_back(4);
+          }
+        }
+      }
+
+      viewer.setAxis(newAxis);
+    });
+
+    axis4.registerChangeCallback([&](bool value) {
+      std::vector<int> newAxis;
+      if (axis1.get()) {
+        newAxis.push_back(0);
+      }
+      if (axis2.get()) {
+        newAxis.push_back(1);
+      }
+      if (axis3.get()) {
+        newAxis.push_back(2);
+      }
+      if (crystalDim.get() > 3) {
+        if (value) {
+          newAxis.push_back(3);
+        }
+        if (crystalDim.get() > 4) {
+          if (axis5.get()) {
+            newAxis.push_back(4);
+          }
+        }
+      }
+
+      viewer.setAxis(newAxis);
+    });
+
+    axis5.registerChangeCallback([&](bool value) {
+      std::vector<int> newAxis;
+      if (axis1.get()) {
+        newAxis.push_back(0);
+      }
+      if (axis2.get()) {
+        newAxis.push_back(1);
+      }
+      if (axis3.get()) {
+        newAxis.push_back(2);
+      }
+      if (crystalDim.get() > 3) {
+        if (axis4.get()) {
+          newAxis.push_back(3);
+        }
+        if (crystalDim.get() > 4) {
+          if (value) {
+            newAxis.push_back(4);
+          }
+        }
+      }
+
+      viewer.setAxis(newAxis);
     });
 
     particle1.registerChangeCallback(
@@ -337,6 +468,23 @@ struct MyApp : App {
       ImGui::Unindent();
     }
 
+    if (ImGui::CollapsingHeader("Edit Viewing Dimension",
+                                ImGuiTreeNodeFlags_CollapsingHeader)) {
+      ParameterGUI::draw(&axis1);
+      ImGui::SameLine();
+      ParameterGUI::draw(&axis2);
+      ImGui::SameLine();
+      ParameterGUI::draw(&axis3);
+      if (crystalDim.get() > 3) {
+        ImGui::SameLine();
+        ParameterGUI::draw(&axis4);
+        if (crystalDim.get() > 4) {
+          ImGui::SameLine();
+          ParameterGUI::draw(&axis5);
+        }
+      }
+    }
+
     if (ImGui::CollapsingHeader("Add Particles",
                                 ImGuiTreeNodeFlags_CollapsingHeader)) {
       ParameterGUI::draw(&particle1);
@@ -470,9 +618,9 @@ struct MyApp : App {
         viewer.drawLatticeEdges(g);
       }
       viewer.drawLattice(g);
-    }
 
-    viewer.drawLatticeParticles(g);
+      viewer.drawLatticeParticles(g);
+    }
 
     if (showSlicePlane.get()) {
       viewer.drawBox(g);

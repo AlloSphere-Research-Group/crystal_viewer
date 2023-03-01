@@ -54,6 +54,7 @@ struct AbstractLattice {
   virtual void resetBasis() = 0;
   virtual float getBasis(unsigned int basisNum, unsigned int vecIdx) = 0;
   virtual void createLattice(int size) = 0;
+  virtual void setAxis(std::vector<int> &newAxis) = 0;
   virtual void setParticle(float value, unsigned int index) = 0;
   virtual void setParticleSize(const float newSize) = 0;
   virtual void setParticleColor(const Color &newColor) = 0;
@@ -75,7 +76,7 @@ struct AbstractLattice {
 };
 
 template <int N> struct Lattice : AbstractLattice {
-  std::vector<Vec<N, float>> basis;
+  std::array<Vec<N, float>, N> basis;
 
   std::vector<Vec<N, int>> vertexIdx;
   std::vector<Vec<N, float>> vertices;
@@ -85,6 +86,8 @@ template <int N> struct Lattice : AbstractLattice {
   std::vector<float> particleSizes;
   std::vector<Vec<N, float>> particleCoords;
 
+  std::vector<int> viewAxis{0, 1, 2};
+
   std::vector<std::pair<int, int>> edgeIdx;
   VAOMesh edges;
 
@@ -93,7 +96,8 @@ template <int N> struct Lattice : AbstractLattice {
     for (int i = 0; i < N; ++i) {
       Vec<N, float> newVec(0);
       newVec[i] = 1.f;
-      basis.push_back(newVec);
+      // basis.push_back(newVec);
+      basis[i] = newVec;
     }
 
     createLattice();
@@ -106,7 +110,8 @@ template <int N> struct Lattice : AbstractLattice {
       for (int i = 0; i < N; ++i) {
         Vec<N, float> newVec(0);
         newVec[i] = 1.f;
-        basis.push_back(newVec);
+        // basis.push_back(newVec);
+        basis[i] = newVec;
       }
     } else {
       for (int i = 0; i < dim; ++i) {
@@ -118,7 +123,8 @@ template <int N> struct Lattice : AbstractLattice {
         } else {
           newVec[i] = 1.f;
         }
-        basis.push_back(newVec);
+        // basis.push_back(newVec);
+        basis[i] = newVec;
       }
     }
 
@@ -185,6 +191,8 @@ template <int N> struct Lattice : AbstractLattice {
 
     update();
   }
+
+  virtual void setAxis(std::vector<int> &newAxis) { viewAxis = newAxis; }
 
   virtual void setParticle(float value, unsigned int index) {
     if (particles.empty()) {
@@ -324,7 +332,14 @@ template <int N> struct Lattice : AbstractLattice {
     for (auto &v : vertices) {
       g.pushMatrix();
       // TODO: project
-      g.translate(v[0], v[1], v[2]);
+      if (viewAxis.size() == 3) {
+        g.translate(v[viewAxis[0]], v[viewAxis[1]], v[viewAxis[2]]);
+      } else if (viewAxis.size() == 2) {
+        g.translate(v[viewAxis[0]], v[viewAxis[1]]);
+      } else if (viewAxis.size() == 1) {
+        g.translate(v[viewAxis[0]], 0);
+      }
+
       // g.translate(v);
       g.scale(sphereSize);
       g.draw(mesh);
@@ -337,11 +352,25 @@ template <int N> struct Lattice : AbstractLattice {
   virtual void drawParticles(Graphics &g, VAOMesh &mesh) {
     for (auto &v : vertices) {
       g.pushMatrix();
-      g.translate(v[0], v[1], v[2]);
+      if (viewAxis.size() == 3) {
+        g.translate(v[viewAxis[0]], v[viewAxis[1]], v[viewAxis[2]]);
+      } else if (viewAxis.size() == 2) {
+        g.translate(v[viewAxis[0]], v[viewAxis[1]]);
+      } else if (viewAxis.size() == 1) {
+        g.translate(v[viewAxis[0]], 0);
+      }
       for (int i = 0; i < particleCoords.size(); ++i) {
         g.pushMatrix();
-        g.translate(particleCoords[i][0], particleCoords[i][1],
-                    particleCoords[i][2]);
+        if (viewAxis.size() == 3) {
+          g.translate(particleCoords[i][viewAxis[0]],
+                      particleCoords[i][viewAxis[1]],
+                      particleCoords[i][viewAxis[2]]);
+        } else if (viewAxis.size() == 2) {
+          g.translate(particleCoords[i][viewAxis[0]],
+                      particleCoords[i][viewAxis[1]]);
+        } else if (viewAxis.size() == 1) {
+          g.translate(particleCoords[i][viewAxis[0]], 0);
+        }
         g.color(particleColors[i]);
         g.scale(particleSizes[i]);
         g.draw(mesh);
