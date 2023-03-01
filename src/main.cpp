@@ -44,7 +44,7 @@ struct MyApp : App {
   Trigger removeParticle{"removeParticle", ""};
 
   ParameterBool showLattice{"showLattice", "", 1};
-  ParameterBool showLatticeEdge{"showLatticeEdge", "", 1};
+  ParameterBool showLatticeEdge{"showLatticeEdge", "", 0};
   ParameterBool showSlice{"showSlice", "", 1};
   ParameterBool showSliceEdge{"showSliceEdge", "", 0};
   ParameterBool showSlicePlane{"showSlicePlane", "", 0};
@@ -55,7 +55,8 @@ struct MyApp : App {
   ParameterColor latticeEdgeColor{"latticeEdgeColor", "", Color(1.f, 0.5f)};
 
   Parameter sliceSphereSize{"sliceSphereSize", 0.04, 0.001, 1};
-  ParameterColor sliceSphereColor{"sliceSphereColor", "", Color(1.f)};
+  ParameterColor sliceSphereColor{"sliceSphereColor", "",
+                                  Color(1.f, 0.f, 0.f, 1.f)};
   ParameterColor sliceEdgeColor{"sliceEdgeColor", "", Color(1.f, 0.5f)};
 
   Parameter slicePlaneSize{"slicePlaneSize", "", 15.f, 0, 30.f};

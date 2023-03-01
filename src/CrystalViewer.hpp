@@ -244,7 +244,7 @@ private:
   Color latticeSphereColor{1.f, 0.8f};
   Color latticeEdgeColor{1.f, 0.5f};
   float sliceSphereSize{0.04f};
-  Color sliceSphereColor{1.f};
+  Color sliceSphereColor{1.f, 0.f, 0.f, 1.f};
   Color sliceEdgeColor{1.f, 0.5f};
   float slicePlaneSize{15.f};
   Color slicePlaneColor{0.3f, 0.3f, 1.f, 0.3f};
