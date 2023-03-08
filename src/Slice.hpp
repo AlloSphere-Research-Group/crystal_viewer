@@ -33,6 +33,7 @@
  */
 
 #include "Lattice.hpp"
+#include <al/math/al_Random.hpp>
 
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
@@ -42,7 +43,7 @@ struct AbstractSlice {
   int sliceDim;
   bool autoUpdate{true};
   bool enableEdges{false};
-  float windowSize{15.f};
+  float windowSize{0.f};
   float windowDepth{0.f};
 
   virtual ~AbstractSlice(){};
@@ -71,6 +72,7 @@ template <int N, int M> struct Slice : AbstractSlice {
   std::vector<Vec<N, float>> sliceBasis;
 
   std::vector<Vec<N, float>> planeVertices;
+  std::vector<Vec<M, float>> subspaceVertices;
   std::vector<std::pair<unsigned int, unsigned int>> boxVertices;
   VAOMesh slicePlane, sliceBox, planeEdges, boxEdges;
 
@@ -78,7 +80,7 @@ template <int N, int M> struct Slice : AbstractSlice {
     latticeDim = N;
     sliceDim = M;
     millerIdx.resize(N - M);
-    normal.resize(N - M);
+    normal.resize(N);
     sliceBasis.resize(M);
 
     for (int i = 0; i < N - M; ++i) {
@@ -92,7 +94,7 @@ template <int N, int M> struct Slice : AbstractSlice {
     latticeDim = N;
     sliceDim = M;
     millerIdx.resize(N - M);
-    normal.resize(N - M);
+    normal.resize(N);
     sliceBasis.resize(M);
     lattice = latticePtr.get();
 
@@ -187,7 +189,15 @@ template <int N, int M> struct Slice : AbstractSlice {
     return projVec;
   }
 
-  Vec<M, float> project(Vec<N, float> &point) {}
+  Vec<M, float> project(Vec<N, float> &point) {
+    Vec<M, float> projVec{0.f};
+
+    for (int i = 0; i < M; ++i) {
+      projVec[i] = point.dot(normal[N - M + i]) / normal[N - M + i].mag();
+    }
+
+    return projVec;
+  }
 
   void computeNormal() {
     for (int i = 0; i < N - M; ++i) {
@@ -198,9 +208,31 @@ template <int N, int M> struct Slice : AbstractSlice {
       normal[i].normalize();
     }
 
-    /*for (int i = 0; i < M; ++i) {
-      sliceBasis[i] =
-    }*/
+    for (int i = N - M; i < N; ++i) {
+      normal[i] = lattice->basis[i];
+      normal[i].normalize();
+
+      for (int j = 0; j < i; ++j) {
+        normal[i] = normal[i] - normal[i].dot(normal[j]);
+      }
+
+      if (normal[i].mag() < 1e-20) {
+        do {
+          for (int j = 0; j < N; ++j) {
+            // TODO: is random the right move here?
+            normal[i][j] = rnd::uniformS();
+          }
+
+          normal[i].normalize();
+
+          for (int j = 0; j < i; ++j) {
+            normal[i] = normal[i] - normal[i].dot(normal[j]);
+          }
+        } while (normal[i].mag() < 1e-20);
+      }
+
+      normal[i].normalize();
+    }
   }
 
   virtual void update() {
@@ -208,6 +240,8 @@ template <int N, int M> struct Slice : AbstractSlice {
 
     planeVertices.clear();
     boxVertices.clear();
+    subspaceVertices.clear();
+
     int index = 0;
     for (int i = 0; i < lattice->vertexIdx.size(); ++i) {
       Vec<N - M, float> dist = distanceToPlane(lattice->vertices[i]);
@@ -216,7 +250,10 @@ template <int N, int M> struct Slice : AbstractSlice {
         for (int j = 0; j < N - M; ++j) {
           projVertex -= dist[j] * normal[j];
         }
+
         planeVertices.push_back(projVertex);
+
+        subspaceVertices.push_back(project(projVertex));
 
         boxVertices.push_back({i, index});
         index++;
@@ -260,16 +297,23 @@ template <int N, int M> struct Slice : AbstractSlice {
   }
 
   virtual void drawSlice(Graphics &g, VAOMesh &mesh, const float &sphereSize) {
-    for (auto &v : planeVertices) {
+    for (auto &v : subspaceVertices) {
+      // for (auto &v : planeVertices) {
       g.pushMatrix();
       // TODO: consider projection
-      if (lattice->viewAxis.size() == 3) {
-        g.translate(v[lattice->viewAxis[0]], v[lattice->viewAxis[1]],
-                    v[lattice->viewAxis[2]]);
-      } else if (lattice->viewAxis.size() == 2) {
-        g.translate(v[lattice->viewAxis[0]], v[lattice->viewAxis[1]]);
-      } else if (lattice->viewAxis.size() == 1) {
-        g.translate(v[lattice->viewAxis[0]], 0);
+      // if (lattice->viewAxis.size() == 3) {
+      //  g.translate(v[lattice->viewAxis[0]], v[lattice->viewAxis[1]],
+      //              v[lattice->viewAxis[2]]);
+      //} else if (lattice->viewAxis.size() == 2) {
+      //  g.translate(v[lattice->viewAxis[0]], v[lattice->viewAxis[1]]);
+      //} else if (lattice->viewAxis.size() == 1) {
+      //  g.translate(v[lattice->viewAxis[0]], 0);
+      //}
+      //
+      if (M == 2) {
+        g.translate(v[0], v[1]);
+      } else if (M == 3) {
+        g.translate(v[0], v[1], v[2]);
       }
       // g.translate(v[0], v[1], v[2]);
       g.scale(sphereSize);
@@ -333,7 +377,26 @@ template <int N, int M> struct Slice : AbstractSlice {
 
     txtOut << std::endl;
 
-    for (auto &v : planeVertices) {
+    for (auto &v : millerIdx) {
+      for (int i = 0; i < N - 1; ++i) {
+        txtOut << std::to_string(v[i]) + " ";
+      }
+      txtOut << std::to_string(v[N - 1]) << std::endl;
+    }
+
+    txtOut << std::endl;
+
+    for (int i = N - M; i < normal.size(); ++i) {
+      for (int j = 0; j < N - 1; ++j) {
+        txtOut << std::to_string(normal[i][j]) + " ";
+      }
+      txtOut << std::to_string(normal[i][N - 1]) << std::endl;
+    }
+
+    txtOut << std::endl;
+
+    for (auto &v : subspaceVertices) {
+      // for (auto &v : planeVertices) {
       for (int i = 0; i < N - 1; ++i) {
         txtOut << std::to_string(v[i]) + " ";
       }
@@ -348,11 +411,19 @@ template <int N, int M> struct Slice : AbstractSlice {
     json newJson;
 
     for (auto &v : lattice->basis) {
-      newJson["basis"].push_back(v);
+      newJson["lattice_basis"].push_back(v);
     }
 
-    for (auto &v : planeVertices) {
-      newJson["planeVertices"].push_back(v);
+    for (auto &v : millerIdx) {
+      newJson["miller_index"].push_back(v);
+    }
+
+    for (int i = N - M; i < normal.size(); ++i) {
+      newJson["projection_basis"].push_back(normal[i]);
+    }
+
+    for (auto &v : subspaceVertices) {
+      newJson["vertices"].push_back(v);
     }
 
     std::ofstream jsonOut(filePath);

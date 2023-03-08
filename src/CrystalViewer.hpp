@@ -48,7 +48,7 @@ public:
     sphereMesh.update();
   }
 
-  void generate(int newDim) {
+  void generate(int newDim, int newSliceDim) {
     switch (newDim) {
     case 3: {
       auto newLattice = std::make_shared<Lattice<3>>(lattice);
@@ -60,18 +60,26 @@ public:
     }
     case 4: {
       auto newLattice = std::make_shared<Lattice<4>>(lattice);
-      auto newSlice = std::make_shared<Slice<4, 2>>(slice, newLattice);
-
+      if (newSliceDim == 2) {
+        auto newSlice = std::make_shared<Slice<4, 2>>(slice, newLattice);
+        slice = newSlice;
+      } else if (newSliceDim == 3) {
+        auto newSlice = std::make_shared<Slice<4, 3>>(slice, newLattice);
+        slice = newSlice;
+      }
       lattice = newLattice;
-      slice = newSlice;
       break;
     }
     case 5: {
       auto newLattice = std::make_shared<Lattice<5>>(lattice);
-      auto newSlice = std::make_shared<Slice<5, 2>>(slice, newLattice);
-
+      if (newSliceDim == 2) {
+        auto newSlice = std::make_shared<Slice<5, 2>>(slice, newLattice);
+        slice = newSlice;
+      } else if (newSliceDim == 3) {
+        auto newSlice = std::make_shared<Slice<5, 3>>(slice, newLattice);
+        slice = newSlice;
+      }
       lattice = newLattice;
-      slice = newSlice;
       break;
     }
     default:
@@ -246,7 +254,7 @@ private:
   float sliceSphereSize{0.04f};
   Color sliceSphereColor{1.f, 0.f, 0.f, 1.f};
   Color sliceEdgeColor{1.f, 0.5f};
-  float slicePlaneSize{15.f};
+  float slicePlaneSize{0.f};
   Color slicePlaneColor{0.3f, 0.3f, 1.f, 0.3f};
 };
 

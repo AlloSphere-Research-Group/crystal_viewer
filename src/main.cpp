@@ -16,7 +16,7 @@ struct MyApp : App {
   Trigger manualUpdate{"Update", ""};
 
   ParameterInt crystalDim{"crystalDim", "", 3, 3, 5};
-  ParameterInt latticeSize{"latticeSize", "", 1, 1, 5};
+  ParameterInt latticeSize{"latticeSize", "", 1, 1, 6};
 
   ParameterInt basisNum{"basisNum", "", 0, 0, 2};
   Parameter basis1{"basis1", "", 1, -5, 5};
@@ -59,7 +59,7 @@ struct MyApp : App {
                                   Color(1.f, 0.f, 0.f, 1.f)};
   ParameterColor sliceEdgeColor{"sliceEdgeColor", "", Color(1.f, 0.5f)};
 
-  Parameter slicePlaneSize{"slicePlaneSize", "", 15.f, 0, 30.f};
+  Parameter slicePlaneSize{"slicePlaneSize", "", 0.f, 0, 30.f};
   ParameterColor slicePlaneColor{"slicePlaneColor", "",
                                  Color(0.3f, 0.3f, 1.f, 0.3f)};
 
@@ -85,7 +85,7 @@ struct MyApp : App {
     nav().pos(0, 0, 4);
 
     viewer.init();
-    viewer.generate(crystalDim.get());
+    viewer.generate(crystalDim.get(), sliceDim.get());
 
     dataDir = File::conformPathToOS(File::currentPath());
 
@@ -135,7 +135,7 @@ struct MyApp : App {
         millerNum.set(value - sliceDim.get() - 1);
       }
 
-      viewer.generate(value);
+      viewer.generate(value, sliceDim.get());
 
       latticeSize.setNoCalls(1);
     });
@@ -350,6 +350,7 @@ struct MyApp : App {
         millerNum.set(crystalDim.get() - value - 1);
       }
 
+      viewer.generate(crystalDim.get(), value);
       // TODO: add 3d slice transition
     });
 
