@@ -52,10 +52,12 @@ struct AbstractSlice {
   virtual void setMiller(float value, int millerNum, unsigned int index) = 0;
   virtual void roundMiller() = 0;
   virtual Vec3f getNormal() = 0;
+  virtual int getSliceNum() = 0;
   virtual void setWindow(float newWindowSize, float newWindowDepth) = 0;
   virtual void update() = 0;
   virtual void drawSlice(Graphics &g, VAOMesh &mesh,
                          const float &sphereSize) = 0;
+  virtual void updateBuffer(BufferObject &buffer) = 0;
   virtual void drawEdges(Graphics &g) = 0;
   virtual void drawPlane(Graphics &g) = 0;
   virtual void drawBox(Graphics &g) = 0;
@@ -72,7 +74,7 @@ template <int N, int M> struct Slice : AbstractSlice {
   std::vector<Vec<N, float>> sliceBasis;
 
   std::vector<Vec<N, float>> planeVertices;
-  std::vector<Vec<M, float>> subspaceVertices;
+  std::vector<Vec3f> subspaceVertices;
   std::vector<std::pair<unsigned int, unsigned int>> boxVertices;
   VAOMesh slicePlane, sliceBox, planeEdges, boxEdges;
 
@@ -160,6 +162,8 @@ template <int N, int M> struct Slice : AbstractSlice {
     }
     return newNorm;
   }
+
+  virtual int getSliceNum() { return subspaceVertices.size(); }
 
   virtual void setWindow(float newWindowSize, float newWindowDepth) {
     windowSize = newWindowSize;
@@ -253,7 +257,7 @@ template <int N, int M> struct Slice : AbstractSlice {
 
         planeVertices.push_back(projVertex);
 
-        subspaceVertices.push_back(project(projVertex));
+        subspaceVertices.emplace_back(project(projVertex));
 
         boxVertices.push_back({i, index});
         index++;
@@ -320,6 +324,15 @@ template <int N, int M> struct Slice : AbstractSlice {
       g.draw(mesh);
       g.popMatrix();
     }
+  }
+
+  virtual void updateBuffer(BufferObject &buffer) {
+    // TODO: add in dirty check
+    // if (dirty) {
+    buffer.bind();
+    buffer.data(subspaceVertices.size() * 3 * sizeof(float),
+                subspaceVertices.data());
+    //}
   }
 
   virtual void drawEdges(Graphics &g) { g.draw(planeEdges); }
