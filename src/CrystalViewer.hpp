@@ -79,13 +79,55 @@ void main()
 
 const std::string instancing_frag = R"(
 #version 330
-// in float t;
+
 uniform vec4 color;
 layout (location = 0) out vec4 frag_out0;
 void main()
 {
-  //frag_out0 = vec4(1.0, t, 0.0, 0.1);
   frag_out0 = color;
+}
+)";
+
+const std::string edge_instancing_vert = R"(
+#version 330
+
+uniform mat4 al_ModelViewMatrix;
+uniform mat4 al_ProjectionMatrix;
+
+layout (location = 0) in vec3 position;
+layout (location = 1) in vec3 offset;
+layout (location = 2) in vec3 end_offset;
+
+out vec4 edge_coords;
+
+void main()
+{
+  vec4 p = vec4(position + offset, 1.0);
+  gl_Position = al_ProjectionMatrix * al_ModelViewMatrix * p;
+
+  vec4 p_end = vec4(position + end_offset, 1.0);  
+
+  edge_coords = al_ProjectionMatrix * al_ModelViewMatrix * p_end;
+}
+)";
+
+const std::string edge_instancing_geo = R"(
+#version 330
+
+in vec4 edge_coords[];
+
+layout(lines) in;
+layout(line_strip, max_vertices=2) out;
+
+void main()
+{
+  gl_Position = gl_in[0].gl_Position;
+  EmitVertex();
+
+  gl_Position = edge_coords[0];
+  EmitVertex();
+
+  EndPrimitive();
 }
 )";
 
@@ -93,20 +135,59 @@ class CrystalViewer {
 public:
   bool init() {
     generate(crystalDim.get(), sliceDim.get());
-    addSphere(sphereMesh, 1.0);
-    sphereMesh.update();
 
-    offsetBuffer.bufferType(GL_ARRAY_BUFFER);
-    offsetBuffer.usage(GL_DYNAMIC_DRAW);
-    offsetBuffer.create();
+    addSphere(latticeSphere, 1.0);
+    latticeSphere.update();
+
+    latticeOffsets.bufferType(GL_ARRAY_BUFFER);
+    latticeOffsets.usage(GL_DYNAMIC_DRAW);
+    latticeOffsets.create();
+
+    addSphere(sliceSphere, 1.0);
+    sliceSphere.update();
+
+    sliceOffsets.bufferType(GL_ARRAY_BUFFER);
+    sliceOffsets.usage(GL_DYNAMIC_DRAW);
+    sliceOffsets.create();
 
     instancing_shader.compile(instancing_vert, instancing_frag);
 
-    auto &vao = sphereMesh.vao();
-    vao.bind();
-    vao.enableAttrib(1);
-    vao.attribPointer(1, offsetBuffer, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    auto &latticeVAO = latticeSphere.vao();
+    latticeVAO.bind();
+    latticeVAO.enableAttrib(1);
+    latticeVAO.attribPointer(1, latticeOffsets, 3, GL_FLOAT, GL_FALSE, 0, 0);
     glVertexAttribDivisor(1, 1);
+
+    auto &sliceVAO = sliceSphere.vao();
+    sliceVAO.bind();
+    sliceVAO.enableAttrib(1);
+    sliceVAO.attribPointer(1, sliceOffsets, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glVertexAttribDivisor(1, 1);
+
+    edgeLine.vertex(Vec3f(0));
+    edgeLine.vertex(Vec3f(1, 1, 1));
+    edgeLine.update();
+
+    edgeOffsets.bufferType(GL_ARRAY_BUFFER);
+    edgeOffsets.usage(GL_DYNAMIC_DRAW);
+    edgeOffsets.create();
+
+    edgeEndOffsets.bufferType(GL_ARRAY_BUFFER);
+    edgeEndOffsets.usage(GL_DYNAMIC_DRAW);
+    edgeEndOffsets.create();
+
+    edge_instancing_shader.compile(edge_instancing_vert, instancing_frag,
+                                   edge_instancing_geo);
+
+    auto &edgeVAO = edgeLine.vao();
+    edgeVAO.bind();
+    edgeVAO.enableAttrib(1);
+    edgeVAO.attribPointer(1, edgeOffsets, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glVertexAttribDivisor(1, 1);
+
+    edgeVAO.enableAttrib(2);
+    edgeVAO.attribPointer(2, edgeEndOffsets, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glVertexAttribDivisor(2, 1);
 
     return registerCallbacks();
   }
@@ -151,28 +232,15 @@ public:
     }
   }
 
-  void update() {
-    lattice->update();
-    slice->update();
-  }
-
   void setBasis(float value, int basisNum, unsigned int vecIdx) {
     lattice->setBasis(value, basisNum, vecIdx);
-    if (autoUpdate) {
-      slice->update();
-    }
+    slice->update();
   }
 
   Vec3f getNormal() { return slice->getNormal(); }
 
   void setGUIFrame(NavInputControl &navControl) {
     ImGui::Begin("Crystal");
-
-    ParameterGUI::draw(&autoUpdate);
-    if (!autoUpdate.get()) {
-      ImGui::SameLine();
-      ParameterGUI::draw(&manualUpdate);
-    }
 
     ParameterGUI::draw(&crystalDim);
     ParameterGUI::draw(&latticeSize);
@@ -284,6 +352,8 @@ public:
     if (showSlice.get()) {
       ParameterGUI::draw(&sliceDim);
       ParameterGUI::draw(&sliceDepth);
+      ParameterGUI::draw(&recreateEdges);
+      ParameterGUI::draw(&edgeThreshold);
 
       ImGui::NewLine();
 
@@ -370,8 +440,19 @@ public:
   }
 
   void drawLattice(Graphics &g) {
-    g.color(latticeSphereColor.get());
-    lattice->drawLattice(g, sphereMesh, latticeSphereSize.get());
+    // g.color(latticeSphereColor.get());
+    // lattice->drawLattice(g, latticeSphere, latticeSphereSize.get());
+    lattice->updateBuffer(latticeOffsets);
+
+    g.shader(instancing_shader);
+    g.shader().uniform("scale", latticeSphereSize.get());
+    g.shader().uniform("color", latticeSphereColor.get());
+    g.update();
+
+    latticeSphere.vao().bind();
+    latticeSphere.indexBuffer().bind();
+    glDrawElementsInstanced(GL_TRIANGLES, latticeSphere.indices().size(),
+                            GL_UNSIGNED_INT, 0, lattice->getLatticeVertexNum());
   }
 
   void drawLatticeEdges(Graphics &g) {
@@ -380,7 +461,7 @@ public:
   }
 
   void drawLatticeParticles(Graphics &g) {
-    lattice->drawParticles(g, sphereMesh);
+    lattice->drawParticles(g, latticeSphere);
   }
 
   void drawSlice(Graphics &g) {
@@ -388,24 +469,34 @@ public:
     slice->drawPlane(g);
 
     // g.color(sliceSphereColor.get());
-    slice->updateBuffer(offsetBuffer);
+    slice->updateBuffer(sliceOffsets);
 
     g.shader(instancing_shader);
     g.shader().uniform("scale", sliceSphereSize.get());
     g.shader().uniform("color", sliceSphereColor.get());
     g.update();
 
-    sphereMesh.vao().bind();
-    sphereMesh.indexBuffer().bind();
-    glDrawElementsInstanced(GL_TRIANGLES, sphereMesh.indices().size(),
-                            GL_UNSIGNED_INT, 0, slice->getSliceNum());
+    sliceSphere.vao().bind();
+    sliceSphere.indexBuffer().bind();
+    glDrawElementsInstanced(GL_TRIANGLES, sliceSphere.indices().size(),
+                            GL_UNSIGNED_INT, 0, slice->getSliceVertexNum());
 
-    // slice->drawSlice(g, sphereMesh, sliceSphereSize.get());
+    // slice->drawSlice(g, sliceSphere, sliceSphereSize.get());
   }
 
   void drawSliceEdges(Graphics &g) {
-    g.color(sliceEdgeColor.get());
-    slice->drawEdges(g);
+    // g.color(sliceEdgeColor.get());
+    // slice->drawEdges(g);
+
+    slice->updateEdgeBuffers(edgeOffsets, edgeEndOffsets);
+
+    g.shader(edge_instancing_shader);
+    g.shader().uniform("color", sliceEdgeColor.get());
+    g.update();
+
+    edgeLine.vao().bind();
+    glDrawArraysInstanced(GL_LINES, 0, edgeLine.vertices().size(),
+                          slice->getSliceEdgeNum());
   }
 
   void drawBox(Graphics &g) {
@@ -414,7 +505,7 @@ public:
     slice->drawBox(g);
 
     g.color(1.f, 1.f, 0.f, 0.2f);
-    slice->drawBoxNodes(g, sphereMesh);
+    slice->drawBoxNodes(g, sliceSphere);
   }
 
   bool registerCallbacks() {
@@ -446,13 +537,6 @@ public:
     sliceEdgeColor.setHint("hsv", true);
     slicePlaneColor.setHint("showAlpha", true);
     slicePlaneColor.setHint("hsv", true);
-
-    autoUpdate.registerChangeCallback([&](bool value) {
-      lattice->autoUpdate = value;
-      slice->autoUpdate = value;
-    });
-
-    manualUpdate.registerChangeCallback([&](bool value) { update(); });
 
     crystalDim.registerChangeCallback([&](int value) {
       basisNum.max(value - 1);
@@ -690,8 +774,12 @@ public:
     enableLatticeEdge.registerChangeCallback(
         [&](bool value) { lattice->enableEdges = value; });
 
-    enableSliceEdge.registerChangeCallback(
-        [&](bool value) { slice->enableEdges = value; });
+    enableSliceEdge.registerChangeCallback([&](bool value) {
+      slice->enableEdges = value;
+      if (value) {
+        slice->updateEdges();
+      }
+    });
 
     slicePlaneSize.registerChangeCallback(
         [&](float value) { slice->setWindow(value, sliceDepth.get()); });
@@ -707,6 +795,16 @@ public:
 
     sliceDepth.registerChangeCallback([&](float value) {
       slice->setWindow(slicePlaneSize.get(), value);
+      slice->update();
+    });
+
+    recreateEdges.registerChangeCallback([&](bool value) {
+      slice->recreateEdges = value;
+      slice->updateEdges();
+    });
+
+    edgeThreshold.registerChangeCallback([&](float value) {
+      slice->edgeThreshold = value;
       slice->update();
     });
 
@@ -774,12 +872,9 @@ private:
   std::shared_ptr<AbstractLattice> lattice;
   std::shared_ptr<AbstractSlice> slice;
 
-  VAOMesh sphereMesh;
-  BufferObject offsetBuffer;
-  ShaderProgram instancing_shader;
-
-  ParameterBool autoUpdate{"autoUpdate", "", 1};
-  Trigger manualUpdate{"Update", ""};
+  VAOMesh latticeSphere, sliceSphere, edgeLine;
+  BufferObject latticeOffsets, sliceOffsets, edgeOffsets, edgeEndOffsets;
+  ShaderProgram instancing_shader, edge_instancing_shader;
 
   ParameterInt crystalDim{"crystalDim", "", 3, 3, 5};
   ParameterInt latticeSize{"latticeSize", "", 1, 1, 6};
@@ -831,6 +926,9 @@ private:
 
   ParameterInt sliceDim{"sliceDim", "", 2, 2, 2};
   Parameter sliceDepth{"sliceDepth", "", 0, 0, 10.f};
+
+  ParameterBool recreateEdges{"recreateEdges", ""};
+  Parameter edgeThreshold{"edgeThreshold", "", 1.1f, 0.f, 2.f};
 
   ParameterInt millerNum{"millerNum", "", 0, 0, 0};
   ParameterBool intMiller{"intMiller", ""};

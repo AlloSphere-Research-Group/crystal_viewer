@@ -39,31 +39,44 @@
 using json = nlohmann::json;
 
 struct AbstractSlice {
-  int latticeDim;
-  int sliceDim;
-  bool autoUpdate{true};
-  bool enableEdges{false};
-  float windowSize{0.f};
-  float windowDepth{0.f};
-
-  virtual ~AbstractSlice(){};
-
   virtual float getMiller(int millerNum, unsigned int index) = 0;
   virtual void setMiller(float value, int millerNum, unsigned int index) = 0;
   virtual void roundMiller() = 0;
+
   virtual Vec3f getNormal() = 0;
-  virtual int getSliceNum() = 0;
+  virtual int getSliceVertexNum() = 0;
+  virtual int getSliceEdgeNum() = 0;
+
   virtual void setWindow(float newWindowSize, float newWindowDepth) = 0;
+
   virtual void update() = 0;
+  virtual void updateEdges() = 0;
+
+  virtual void updateBuffer(BufferObject &buffer) = 0;
+  virtual void updateEdgeBuffers(BufferObject &startBuffer,
+                                 BufferObject &endBuffer) = 0;
   virtual void drawSlice(Graphics &g, VAOMesh &mesh,
                          const float &sphereSize) = 0;
-  virtual void updateBuffer(BufferObject &buffer) = 0;
   virtual void drawEdges(Graphics &g) = 0;
   virtual void drawPlane(Graphics &g) = 0;
   virtual void drawBox(Graphics &g) = 0;
   virtual void drawBoxNodes(Graphics &g, VAOMesh &mesh) = 0;
+
   virtual void exportToTxt(std::string &filePath) = 0;
   virtual void exportToJson(std::string &filePath) = 0;
+
+  int latticeDim;
+  int sliceDim;
+
+  bool enableEdges{false};
+  bool recreateEdges{false};
+  bool dirty{false};
+  bool dirtyEdges{false};
+  bool busy{false};
+
+  float edgeThreshold{1.1f};
+  float windowSize{0.f};
+  float windowDepth{0.f};
 };
 
 template <int N, int M> struct Slice : AbstractSlice {
@@ -75,6 +88,9 @@ template <int N, int M> struct Slice : AbstractSlice {
 
   std::vector<Vec<N, float>> planeVertices;
   std::vector<Vec3f> subspaceVertices;
+  std::vector<Vec3f> edgeStarts;
+  std::vector<Vec3f> edgeEnds;
+
   std::vector<std::pair<unsigned int, unsigned int>> boxVertices;
   VAOMesh slicePlane, sliceBox, planeEdges, boxEdges;
 
@@ -106,6 +122,9 @@ template <int N, int M> struct Slice : AbstractSlice {
         millerIdx[i][i] = 1.f;
       }
     } else {
+      enableEdges = oldSlice->enableEdges;
+      recreateEdges = oldSlice->recreateEdges;
+      edgeThreshold = oldSlice->edgeThreshold;
       windowSize = oldSlice->windowSize;
       windowDepth = oldSlice->windowDepth;
       int oldLatticeDim = oldSlice->latticeDim;
@@ -139,9 +158,7 @@ template <int N, int M> struct Slice : AbstractSlice {
 
     millerIdx[millerNum][index] = value;
 
-    if (autoUpdate) {
-      update();
-    }
+    update();
   }
 
   virtual void roundMiller() {
@@ -150,9 +167,8 @@ template <int N, int M> struct Slice : AbstractSlice {
         v = std::round(v);
       }
     }
-    if (autoUpdate) {
-      update();
-    }
+
+    update();
   }
 
   virtual Vec3f getNormal() {
@@ -163,7 +179,8 @@ template <int N, int M> struct Slice : AbstractSlice {
     return newNorm;
   }
 
-  virtual int getSliceNum() { return subspaceVertices.size(); }
+  virtual int getSliceVertexNum() { return subspaceVertices.size(); }
+  virtual int getSliceEdgeNum() { return edgeStarts.size(); }
 
   virtual void setWindow(float newWindowSize, float newWindowDepth) {
     windowSize = newWindowSize;
@@ -240,6 +257,8 @@ template <int N, int M> struct Slice : AbstractSlice {
   }
 
   virtual void update() {
+    dirty = true;
+
     computeNormal();
 
     planeVertices.clear();
@@ -264,40 +283,82 @@ template <int N, int M> struct Slice : AbstractSlice {
       }
     }
 
-    planeEdges.reset();
-    planeEdges.primitive(Mesh::LINES);
-    boxEdges.reset();
-    boxEdges.primitive(Mesh::LINES);
+    if (enableEdges) {
+      updateEdges();
+    }
+  }
 
-    for (auto &e : lattice->edgeIdx) {
-      // auto it1 = std::find_if(
-      //     boxVertices.begin(), boxVertices.end(),
-      //     [&e](const std::pair<unsigned int, unsigned int> &element) {
-      //       return element.first == e.first;
-      //     });
-      // auto it2 = std::find_if(
-      //     boxVertices.begin(), boxVertices.end(),
-      //     [&e](const std::pair<unsigned int, unsigned int> &element) {
-      //       return element.first == e.second;
-      //     });
+  virtual void updateEdges() {
+    dirtyEdges = true;
+    edgeStarts.clear();
+    edgeEnds.clear();
 
-      Vec<N - M, float> dist1 = distanceToPlane((lattice->vertices[e.first]));
-      Vec<N - M, float> dist2 = distanceToPlane((lattice->vertices[e.second]));
-      if (dist1.mag() < windowDepth && dist2.mag() < windowDepth) {
-        boxEdges.vertex(lattice->vertices[e.first]);
-        boxEdges.vertex(lattice->vertices[e.second]);
-        Vec<N, float> projVertex1 = lattice->vertices[e.first];
-        Vec<N, float> projVertex2 = lattice->vertices[e.second];
-        for (int i = 0; i < N - M; ++i) {
-          projVertex1 -= dist1[i] * normal[i];
-          projVertex2 -= dist2[i] * normal[i];
+    if (recreateEdges) {
+      for (int i = 0; i < subspaceVertices.size(); ++i) {
+        for (int j = i + 1; j < subspaceVertices.size(); ++j) {
+          Vec3f dist = subspaceVertices[i] - subspaceVertices[j];
+          if (dist.mag() < edgeThreshold) {
+            edgeStarts.push_back(subspaceVertices[i]);
+            edgeEnds.push_back(subspaceVertices[j]);
+          }
         }
-        planeEdges.vertex(projVertex1);
-        planeEdges.vertex(projVertex2);
+      }
+    } else {
+      for (auto &e : lattice->edgeIdx) {
+        auto it1 = std::find_if(
+            boxVertices.begin(), boxVertices.end(),
+            [&e](const std::pair<unsigned int, unsigned int> &element) {
+              return element.first == e.first;
+            });
+        if (it1 != boxVertices.end()) {
+          auto it2 = std::find_if(
+              boxVertices.begin(), boxVertices.end(),
+              [&e](const std::pair<unsigned int, unsigned int> &element) {
+                return element.first == e.second;
+              });
+          if (it2 != boxVertices.end()) {
+            edgeStarts.push_back(subspaceVertices[it1->second]);
+            edgeEnds.push_back(subspaceVertices[it2->second]);
+          }
+        }
       }
     }
-    planeEdges.update();
-    boxEdges.update();
+
+    // planeEdges.reset();
+    // planeEdges.primitive(Mesh::LINES);
+    // boxEdges.reset();
+    // boxEdges.primitive(Mesh::LINES);
+
+    // for (auto &e : lattice->edgeIdx) {
+    //   // auto it1 = std::find_if(
+    //   //     boxVertices.begin(), boxVertices.end(),
+    //   //     [&e](const std::pair<unsigned int, unsigned int> &element) {
+    //   //       return element.first == e.first;
+    //   //     });
+    //   // auto it2 = std::find_if(
+    //   //     boxVertices.begin(), boxVertices.end(),
+    //   //     [&e](const std::pair<unsigned int, unsigned int> &element) {
+    //   //       return element.first == e.second;
+    //   //     });
+
+    //  Vec<N - M, float> dist1 = distanceToPlane((lattice->vertices[e.first]));
+    //  Vec<N - M, float> dist2 =
+    //  distanceToPlane((lattice->vertices[e.second])); if (dist1.mag() <
+    //  windowDepth && dist2.mag() < windowDepth) {
+    //    boxEdges.vertex(lattice->vertices[e.first]);
+    //    boxEdges.vertex(lattice->vertices[e.second]);
+    //    Vec<N, float> projVertex1 = lattice->vertices[e.first];
+    //    Vec<N, float> projVertex2 = lattice->vertices[e.second];
+    //    for (int i = 0; i < N - M; ++i) {
+    //      projVertex1 -= dist1[i] * normal[i];
+    //      projVertex2 -= dist2[i] * normal[i];
+    //    }
+    //    planeEdges.vertex(projVertex1);
+    //    planeEdges.vertex(projVertex2);
+    //  }
+    //}
+    // planeEdges.update();
+    // boxEdges.update();
   }
 
   virtual void drawSlice(Graphics &g, VAOMesh &mesh, const float &sphereSize) {
@@ -327,12 +388,26 @@ template <int N, int M> struct Slice : AbstractSlice {
   }
 
   virtual void updateBuffer(BufferObject &buffer) {
-    // TODO: add in dirty check
-    // if (dirty) {
-    buffer.bind();
-    buffer.data(subspaceVertices.size() * 3 * sizeof(float),
-                subspaceVertices.data());
-    //}
+    if (dirty) {
+      buffer.bind();
+      buffer.data(subspaceVertices.size() * 3 * sizeof(float),
+                  subspaceVertices.data());
+      dirty = false;
+    }
+  }
+
+  virtual void updateEdgeBuffers(BufferObject &startBuffer,
+                                 BufferObject &endBuffer) {
+    if (dirtyEdges) {
+      startBuffer.bind();
+      startBuffer.data(edgeStarts.size() * 3 * sizeof(float),
+                       edgeStarts.data());
+
+      endBuffer.bind();
+      endBuffer.data(edgeEnds.size() * 3 * sizeof(float), edgeEnds.data());
+
+      dirtyEdges = false;
+    }
   }
 
   virtual void drawEdges(Graphics &g) { g.draw(planeEdges); }

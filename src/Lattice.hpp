@@ -53,14 +53,22 @@ struct AbstractLattice {
                         unsigned int vecIdx) = 0;
   virtual void resetBasis() = 0;
   virtual float getBasis(unsigned int basisNum, unsigned int vecIdx) = 0;
+
+  virtual int getLatticeVertexNum() = 0;
+
   virtual void createLattice(int size) = 0;
+
   virtual void setAxis(std::vector<int> &newAxis) = 0;
+
   virtual void setParticle(float value, unsigned int index) = 0;
   virtual void setParticleSize(const float newSize) = 0;
   virtual void setParticleColor(const Color &newColor) = 0;
   virtual void addParticle() = 0;
   virtual void removeParticle() = 0;
+
   virtual void update() = 0;
+
+  virtual void updateBuffer(BufferObject &buffer) = 0;
   virtual void drawLattice(Graphics &g, VAOMesh &mesh,
                            const float &sphereSize) = 0;
   virtual void drawEdges(Graphics &g) = 0;
@@ -68,11 +76,10 @@ struct AbstractLattice {
 
   int dim;
   int latticeSize{1};
-  bool autoUpdate{true};
-  bool enableEdges{false};
 
-  // bool sizeChanged{false};
-  // bool busy{false};
+  bool enableEdges{false};
+  bool dirty{false};
+  bool busy{false};
 };
 
 template <int N> struct Lattice : AbstractLattice {
@@ -80,6 +87,7 @@ template <int N> struct Lattice : AbstractLattice {
 
   std::vector<Vec<N, int>> vertexIdx;
   std::vector<Vec<N, float>> vertices;
+  std::vector<Vec3f> projectedVertices;
 
   std::vector<Vec<N, float>> particles;
   std::vector<Color> particleColors;
@@ -139,9 +147,7 @@ template <int N> struct Lattice : AbstractLattice {
     }
     basis[basisNum][vecIdx] = value;
 
-    if (autoUpdate) {
-      update();
-    }
+    update();
   }
 
   virtual void resetBasis() {
@@ -151,9 +157,7 @@ template <int N> struct Lattice : AbstractLattice {
       basis[i] = newVec;
     }
 
-    if (autoUpdate) {
-      update();
-    }
+    update();
   }
 
   virtual float getBasis(unsigned int basisNum, unsigned int vecIdx) {
@@ -163,6 +167,8 @@ template <int N> struct Lattice : AbstractLattice {
     }
     return basis[basisNum][vecIdx];
   }
+
+  virtual int getLatticeVertexNum() { return projectedVertices.size(); }
 
   virtual void createLattice(int size) {
     latticeSize = size;
@@ -262,15 +268,17 @@ template <int N> struct Lattice : AbstractLattice {
     for (auto &e : edgeIdx) {
       edges.vertex(vertices[e.first]);
       edges.vertex(vertices[e.second]);
-      // edges.vertex(projectedVertices[e.first]);
-      // edges.vertex(projectedVertices[e.second]);
     }
     edges.update();
   }
 
   virtual void update() {
+    dirty = true;
+
     // TODO: check if clear can be avoided
-    clear();
+    edgeIdx.clear();
+    vertices.clear();
+    projectedVertices.clear();
 
     for (auto &v : vertexIdx) {
       Vec<N, float> newVec(0);
@@ -278,14 +286,10 @@ template <int N> struct Lattice : AbstractLattice {
         newVec += (float)v[i] * basis[i];
       }
       vertices.push_back(newVec);
+      projectedVertices.push_back(project(newVec));
     }
 
     computeEdges();
-  }
-
-  void clear() {
-    edgeIdx.clear();
-    vertices.clear();
   }
 
   // Vec<N - 1, float> stereographicProjection(Vec<N, float>& point) {
@@ -296,7 +300,11 @@ template <int N> struct Lattice : AbstractLattice {
   //   return newPoint;
   // }
 
-  Vec3f project(Vec<N, float> &point) {
+  inline Vec3f project(Vec<N, float> &point) {
+    return Vec3f{point[0], point[1], point[2]};
+  }
+
+  Vec3f stereographic(Vec<N, float> &point) {
     if (N < 4) {
       Vec3f newPoint;
       for (int i = 0; i < 2; ++i) {
@@ -326,9 +334,17 @@ template <int N> struct Lattice : AbstractLattice {
     return newPoint;
   }
 
+  virtual void updateBuffer(BufferObject &buffer) {
+    if (dirty) {
+      buffer.bind();
+      buffer.data(projectedVertices.size() * 3 * sizeof(float),
+                  projectedVertices.data());
+      dirty = false;
+    }
+  }
+
   virtual void drawLattice(Graphics &g, VAOMesh &mesh,
                            const float &sphereSize) {
-    // for (auto &v : projectedVertices) {
     for (auto &v : vertices) {
       g.pushMatrix();
       // TODO: project
