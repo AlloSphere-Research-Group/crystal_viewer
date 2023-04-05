@@ -49,62 +49,53 @@
 using namespace al;
 
 struct AbstractLattice {
+  virtual void createLattice(int size) = 0;
+  virtual void update() = 0;
+  virtual void updateEdges() = 0;
+
   virtual void setBasis(float value, unsigned int basisNum,
                         unsigned int vecIdx) = 0;
-  virtual void resetBasis() = 0;
   virtual float getBasis(unsigned int basisNum, unsigned int vecIdx) = 0;
+  virtual void resetBasis() = 0;
 
-  virtual int getLatticeVertexNum() = 0;
-
-  virtual void createLattice(int size) = 0;
+  virtual int getVertexNum() = 0;
+  virtual int getEdgeNum() = 0;
 
   virtual void setAxis(std::vector<int> &newAxis) = 0;
 
-  virtual void setParticle(float value, unsigned int index) = 0;
-  virtual void setParticleSize(const float newSize) = 0;
-  virtual void setParticleColor(const Color &newColor) = 0;
-  virtual void addParticle() = 0;
-  virtual void removeParticle() = 0;
-
-  virtual void update() = 0;
-
   virtual void updateBuffer(BufferObject &buffer) = 0;
-  virtual void drawLattice(Graphics &g, VAOMesh &mesh,
-                           const float &sphereSize) = 0;
-  virtual void drawEdges(Graphics &g) = 0;
-  virtual void drawParticles(Graphics &g, VAOMesh &mesh) = 0;
+  virtual void updateEdgeBuffers(BufferObject &startBuffer,
+                                 BufferObject &endBuffer) = 0;
 
   int dim;
   int latticeSize{1};
 
   bool enableEdges{false};
   bool dirty{false};
+  bool dirtyEdges{false};
   bool busy{false};
 };
 
 template <int N> struct Lattice : AbstractLattice {
   std::array<Vec<N, float>, N> basis;
+  std::vector<Vec<N, float>> vertices;
+  std::vector<Vec<N, int>> offsets;
 
   std::vector<Vec<N, int>> vertexIdx;
-  std::vector<Vec<N, float>> vertices;
-  std::vector<Vec3f> projectedVertices;
-
-  std::vector<Vec<N, float>> particles;
-  std::vector<Color> particleColors;
-  std::vector<float> particleSizes;
-  std::vector<Vec<N, float>> particleCoords;
 
   std::vector<int> viewAxis{0, 1, 2};
 
   std::vector<std::pair<int, int>> edgeIdx;
-  VAOMesh edges;
+
+  std::vector<Vec3f> projectedVertices;
+  std::vector<Vec3f> edgeStarts;
+  std::vector<Vec3f> edgeEnds;
 
   Lattice() {
     dim = N;
     for (int i = 0; i < N; ++i) {
       Vec<N, float> newVec(0);
       newVec[i] = 1.f;
-      // basis.push_back(newVec);
       basis[i] = newVec;
     }
 
@@ -139,6 +130,86 @@ template <int N> struct Lattice : AbstractLattice {
     createLattice();
   }
 
+  virtual void createLattice(int size) {
+    latticeSize = size;
+    createLattice();
+  }
+
+  void createLattice() {
+    // int num = latticeSize + 1;
+    // int totalNum = std::pow(num, N);
+    // for (int i = 0; i < totalNum; ++i) {
+    //   Vec<N, int> newIdx(0);
+    //   int k = i;
+    //   newIdx[0] = i % num;
+    //   for (int j = 1; j < N; ++j) {
+    //     newIdx[j] = k / num;
+    //
+    //   }
+    //   newIdx.print();
+    // }
+
+    vertexIdx.clear();
+
+    Vec<N, int> newIdx(-latticeSize);
+    vertexIdx.push_back(newIdx);
+
+    while (true) {
+      newIdx[0] += 1;
+      for (int i = 0; i < N - 1; ++i) {
+        if (newIdx[i] > latticeSize) {
+          newIdx[i] = -latticeSize;
+          newIdx[i + 1] += 1;
+        }
+      }
+      if (newIdx[N - 1] > latticeSize)
+        break;
+
+      vertexIdx.push_back(newIdx);
+    }
+
+    update();
+  }
+
+  virtual void update() {
+    dirty = true;
+
+    // TODO: check if clear can be avoided
+    vertices.clear();
+    projectedVertices.clear();
+
+    for (auto &v : vertexIdx) {
+      Vec<N, float> newVec(0);
+      for (int i = 0; i < N; ++i) {
+        newVec += (float)v[i] * basis[i];
+      }
+      vertices.push_back(newVec);
+      projectedVertices.push_back(project(newVec));
+    }
+
+    updateEdges();
+  }
+
+  virtual void updateEdges() {
+    if (!enableEdges)
+      return;
+
+    dirtyEdges = true;
+    edgeIdx.clear();
+    edgeStarts.clear();
+    edgeEnds.clear();
+
+    for (int i = 0; i < vertexIdx.size() - 1; ++i) {
+      for (int j = i + 1; j < vertexIdx.size(); ++j) {
+        if ((vertexIdx[i] - vertexIdx[j]).sumAbs() == 1) {
+          edgeIdx.push_back({i, j});
+          edgeStarts.push_back(projectedVertices[i]);
+          edgeEnds.push_back(projectedVertices[j]);
+        }
+      }
+    }
+  }
+
   virtual void setBasis(float value, unsigned int basisNum,
                         unsigned int vecIdx) {
     if (basisNum >= N || vecIdx >= N) {
@@ -168,129 +239,10 @@ template <int N> struct Lattice : AbstractLattice {
     return basis[basisNum][vecIdx];
   }
 
-  virtual int getLatticeVertexNum() { return projectedVertices.size(); }
-
-  virtual void createLattice(int size) {
-    latticeSize = size;
-    createLattice();
-  }
-
-  void createLattice() {
-    vertexIdx.clear();
-
-    Vec<N, int> newIdx(-latticeSize);
-    vertexIdx.push_back(newIdx);
-
-    while (true) {
-      newIdx[0] += 1;
-      for (int i = 0; i < N - 1; ++i) {
-        if (newIdx[i] > latticeSize) {
-          newIdx[i] = -latticeSize;
-          newIdx[i + 1] += 1;
-        }
-      }
-      if (newIdx[N - 1] > latticeSize)
-        break;
-
-      vertexIdx.push_back(newIdx);
-    }
-
-    update();
-  }
+  virtual int getVertexNum() { return projectedVertices.size(); }
+  virtual int getEdgeNum() { return edgeStarts.size(); }
 
   virtual void setAxis(std::vector<int> &newAxis) { viewAxis = newAxis; }
-
-  virtual void setParticle(float value, unsigned int index) {
-    if (particles.empty()) {
-      std::cerr << "no particles added" << std::endl;
-      return;
-    }
-
-    particles.back()[index] = value;
-
-    Vec<N, float> newCoord{0};
-
-    for (int i = 0; i < N; ++i) {
-      newCoord += particles.back()[i] * basis[i];
-    }
-    particleCoords.back() = newCoord;
-  }
-
-  virtual void setParticleSize(const float newSize) {
-    if (particles.empty()) {
-      std::cerr << "no particles added" << std::endl;
-      return;
-    }
-    particleSizes.back() = newSize;
-  }
-
-  virtual void setParticleColor(const Color &newColor) {
-    if (particles.empty()) {
-      std::cerr << "no particles added" << std::endl;
-      return;
-    }
-    particleColors.back() = newColor;
-  }
-
-  virtual void addParticle() {
-    particles.emplace_back();
-    particleColors.emplace_back(1.f, 0.2f, 0.2f, 0.8f);
-    particleSizes.emplace_back(0.02f);
-    particleCoords.emplace_back();
-  }
-
-  virtual void removeParticle() {
-    particles.pop_back();
-    particleColors.pop_back();
-    particleSizes.pop_back();
-    particleCoords.pop_back();
-  }
-
-  void computeEdges() {
-    for (int i = 0; i < vertexIdx.size() - 1; ++i) {
-      for (int j = i + 1; j < vertexIdx.size(); ++j) {
-        if ((vertexIdx[i] - vertexIdx[j]).sumAbs() == 1) {
-          edgeIdx.push_back({i, j});
-        }
-      }
-    }
-
-    // for (int i = 0; i < vertexIdx.size() - 1; ++i) {
-    //   for (int j = i + 1; j < vertexIdx.size(); ++j) {
-    //     if ((vertices[i] - vertices[j]).magSqr() < 1.f) {
-    //       edgeIdx.push_back({i, j});
-    //     }
-    //   }
-    // }
-
-    edges.reset();
-    edges.primitive(Mesh::LINES);
-    for (auto &e : edgeIdx) {
-      edges.vertex(vertices[e.first]);
-      edges.vertex(vertices[e.second]);
-    }
-    edges.update();
-  }
-
-  virtual void update() {
-    dirty = true;
-
-    // TODO: check if clear can be avoided
-    edgeIdx.clear();
-    vertices.clear();
-    projectedVertices.clear();
-
-    for (auto &v : vertexIdx) {
-      Vec<N, float> newVec(0);
-      for (int i = 0; i < N; ++i) {
-        newVec += (float)v[i] * basis[i];
-      }
-      vertices.push_back(newVec);
-      projectedVertices.push_back(project(newVec));
-    }
-
-    computeEdges();
-  }
 
   // Vec<N - 1, float> stereographicProjection(Vec<N, float>& point) {
   //   Vec<N - 1, float> newPoint;
@@ -343,56 +295,17 @@ template <int N> struct Lattice : AbstractLattice {
     }
   }
 
-  virtual void drawLattice(Graphics &g, VAOMesh &mesh,
-                           const float &sphereSize) {
-    for (auto &v : vertices) {
-      g.pushMatrix();
-      // TODO: project
-      if (viewAxis.size() == 3) {
-        g.translate(v[viewAxis[0]], v[viewAxis[1]], v[viewAxis[2]]);
-      } else if (viewAxis.size() == 2) {
-        g.translate(v[viewAxis[0]], v[viewAxis[1]]);
-      } else if (viewAxis.size() == 1) {
-        g.translate(v[viewAxis[0]], 0);
-      }
+  virtual void updateEdgeBuffers(BufferObject &startBuffer,
+                                 BufferObject &endBuffer) {
+    if (dirtyEdges) {
+      startBuffer.bind();
+      startBuffer.data(edgeStarts.size() * 3 * sizeof(float),
+                       edgeStarts.data());
 
-      // g.translate(v);
-      g.scale(sphereSize);
-      g.draw(mesh);
-      g.popMatrix();
-    }
-  }
+      endBuffer.bind();
+      endBuffer.data(edgeEnds.size() * 3 * sizeof(float), edgeEnds.data());
 
-  virtual void drawEdges(Graphics &g) { g.draw(edges); }
-
-  virtual void drawParticles(Graphics &g, VAOMesh &mesh) {
-    for (auto &v : vertices) {
-      g.pushMatrix();
-      if (viewAxis.size() == 3) {
-        g.translate(v[viewAxis[0]], v[viewAxis[1]], v[viewAxis[2]]);
-      } else if (viewAxis.size() == 2) {
-        g.translate(v[viewAxis[0]], v[viewAxis[1]]);
-      } else if (viewAxis.size() == 1) {
-        g.translate(v[viewAxis[0]], 0);
-      }
-      for (int i = 0; i < particleCoords.size(); ++i) {
-        g.pushMatrix();
-        if (viewAxis.size() == 3) {
-          g.translate(particleCoords[i][viewAxis[0]],
-                      particleCoords[i][viewAxis[1]],
-                      particleCoords[i][viewAxis[2]]);
-        } else if (viewAxis.size() == 2) {
-          g.translate(particleCoords[i][viewAxis[0]],
-                      particleCoords[i][viewAxis[1]]);
-        } else if (viewAxis.size() == 1) {
-          g.translate(particleCoords[i][viewAxis[0]], 0);
-        }
-        g.color(particleColors[i]);
-        g.scale(particleSizes[i]);
-        g.draw(mesh);
-        g.popMatrix();
-      }
-      g.popMatrix();
+      dirtyEdges = false;
     }
   }
 };

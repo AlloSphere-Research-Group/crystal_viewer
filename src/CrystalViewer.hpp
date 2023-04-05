@@ -54,22 +54,30 @@ const std::string instancing_vert = R"(
 uniform mat4 al_ModelViewMatrix;
 uniform mat4 al_ProjectionMatrix;
 uniform float scale;
+uniform float useColorCode;
+uniform vec4 color;
+uniform vec3 boxMin;
+uniform vec3 boxMax;
 
 layout (location = 0) in vec3 position;
-// attibute at location 1 will be set to have
-// "attribute divisor = 1" which means for given buffer for attibute 1,
-// index for reading that buffer will increase per-instance, not per-vertex
-// divisor = 0 is default value and means per-vertex increase
 layout (location = 1) in vec3 offset;
+layout (location = 2) in vec4 colors;
 
-// out float t;
+out vec4 colorCode;
+
+float insideBox(vec3 v) {
+    vec3 s = step(boxMin, v) - step(boxMax, v);
+    return s.x * s.y * s.z; 
+}
 
 void main()
 {
-  // to multiply position vector with matrices,
-  // 4th component must be 1 (homogeneous coord)
   vec4 p = vec4(scale * position + offset, 1.0);
   gl_Position = al_ProjectionMatrix * al_ModelViewMatrix * p;
+  
+  colorCode = useColorCode * colors + (1 - useColorCode) * color;
+  float ib = insideBox(offset);
+  colorCode.a = 0.01 + 0.99 * ib;
   // we also have access to index of instance,
   // for example, when drawing 100 instances,
   // `gl_InstanceID` goes 0 to 99
@@ -80,11 +88,13 @@ void main()
 const std::string instancing_frag = R"(
 #version 330
 
-uniform vec4 color;
+in vec4 colorCode;
+
 layout (location = 0) out vec4 frag_out0;
+
 void main()
 {
-  frag_out0 = color;
+  frag_out0 = colorCode;
 }
 )";
 
@@ -93,12 +103,20 @@ const std::string edge_instancing_vert = R"(
 
 uniform mat4 al_ModelViewMatrix;
 uniform mat4 al_ProjectionMatrix;
+uniform vec3 boxMin;
+uniform vec3 boxMax;
 
 layout (location = 0) in vec3 position;
 layout (location = 1) in vec3 offset;
 layout (location = 2) in vec3 end_offset;
 
 out vec4 edge_coords;
+out float inBox;
+
+float insideBox(vec3 v) {
+    vec3 s = step(boxMin, v) - step(boxMax, v);
+    return s.x * s.y * s.z; 
+}
 
 void main()
 {
@@ -108,6 +126,7 @@ void main()
   vec4 p_end = vec4(position + end_offset, 1.0);  
 
   edge_coords = al_ProjectionMatrix * al_ModelViewMatrix * p_end;
+  inBox = insideBox(offset) * insideBox(end_offset);
 }
 )";
 
@@ -115,19 +134,39 @@ const std::string edge_instancing_geo = R"(
 #version 330
 
 in vec4 edge_coords[];
+in float inBox[];
+
+out float isInBox;
 
 layout(lines) in;
 layout(line_strip, max_vertices=2) out;
 
 void main()
 {
+  isInBox = inBox[0];
+
   gl_Position = gl_in[0].gl_Position;
   EmitVertex();
 
   gl_Position = edge_coords[0];
   EmitVertex();
-
+  
   EndPrimitive();
+}
+)";
+
+const std::string edge_instancing_frag = R"(
+#version 330
+
+uniform vec4 color;
+
+in float isInBox;
+
+layout (location = 0) out vec4 frag_out0;
+
+void main()
+{
+  frag_out0 = vec4(color.rgb, 0.01 + color.a * 0.99 * isInBox);
 }
 )";
 
@@ -139,54 +178,94 @@ public:
     addSphere(latticeSphere, 1.0);
     latticeSphere.update();
 
-    latticeOffsets.bufferType(GL_ARRAY_BUFFER);
-    latticeOffsets.usage(GL_DYNAMIC_DRAW);
-    latticeOffsets.create();
+    latticeVertices.bufferType(GL_ARRAY_BUFFER);
+    latticeVertices.usage(GL_DYNAMIC_DRAW);
+    latticeVertices.create();
+
+    latticeColors.bufferType(GL_ARRAY_BUFFER);
+    latticeColors.usage(GL_DYNAMIC_DRAW);
+    latticeColors.create();
 
     addSphere(sliceSphere, 1.0);
     sliceSphere.update();
 
-    sliceOffsets.bufferType(GL_ARRAY_BUFFER);
-    sliceOffsets.usage(GL_DYNAMIC_DRAW);
-    sliceOffsets.create();
+    sliceVertices.bufferType(GL_ARRAY_BUFFER);
+    sliceVertices.usage(GL_DYNAMIC_DRAW);
+    sliceVertices.create();
+
+    sliceColors.bufferType(GL_ARRAY_BUFFER);
+    sliceColors.usage(GL_DYNAMIC_DRAW);
+    sliceColors.create();
 
     instancing_shader.compile(instancing_vert, instancing_frag);
 
     auto &latticeVAO = latticeSphere.vao();
     latticeVAO.bind();
     latticeVAO.enableAttrib(1);
-    latticeVAO.attribPointer(1, latticeOffsets, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    latticeVAO.attribPointer(1, latticeVertices, 3, GL_FLOAT, GL_FALSE, 0, 0);
     glVertexAttribDivisor(1, 1);
+
+    latticeVAO.enableAttrib(2);
+    latticeVAO.attribPointer(2, latticeColors, 4, GL_FLOAT, GL_FALSE, 0, 0);
+    glVertexAttribDivisor(2, 1);
 
     auto &sliceVAO = sliceSphere.vao();
     sliceVAO.bind();
     sliceVAO.enableAttrib(1);
-    sliceVAO.attribPointer(1, sliceOffsets, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    sliceVAO.attribPointer(1, sliceVertices, 3, GL_FLOAT, GL_FALSE, 0, 0);
     glVertexAttribDivisor(1, 1);
 
-    edgeLine.vertex(Vec3f(0));
-    edgeLine.vertex(Vec3f(1, 1, 1));
-    edgeLine.update();
+    sliceVAO.enableAttrib(2);
+    sliceVAO.attribPointer(2, sliceColors, 4, GL_FLOAT, GL_FALSE, 0, 0);
+    glVertexAttribDivisor(2, 1);
 
-    edgeOffsets.bufferType(GL_ARRAY_BUFFER);
-    edgeOffsets.usage(GL_DYNAMIC_DRAW);
-    edgeOffsets.create();
+    latticeEdge.vertex(Vec3f(0));
+    latticeEdge.vertex(Vec3f(1, 1, 1));
+    latticeEdge.update();
 
-    edgeEndOffsets.bufferType(GL_ARRAY_BUFFER);
-    edgeEndOffsets.usage(GL_DYNAMIC_DRAW);
-    edgeEndOffsets.create();
+    latticeEdgeStarts.bufferType(GL_ARRAY_BUFFER);
+    latticeEdgeStarts.usage(GL_DYNAMIC_DRAW);
+    latticeEdgeStarts.create();
 
-    edge_instancing_shader.compile(edge_instancing_vert, instancing_frag,
+    latticeEdgeEnds.bufferType(GL_ARRAY_BUFFER);
+    latticeEdgeEnds.usage(GL_DYNAMIC_DRAW);
+    latticeEdgeEnds.create();
+
+    sliceEdge.vertex(Vec3f(0));
+    sliceEdge.vertex(Vec3f(1, 1, 1));
+    sliceEdge.update();
+
+    sliceEdgeStarts.bufferType(GL_ARRAY_BUFFER);
+    sliceEdgeStarts.usage(GL_DYNAMIC_DRAW);
+    sliceEdgeStarts.create();
+
+    sliceEdgeEnds.bufferType(GL_ARRAY_BUFFER);
+    sliceEdgeEnds.usage(GL_DYNAMIC_DRAW);
+    sliceEdgeEnds.create();
+
+    edge_instancing_shader.compile(edge_instancing_vert, edge_instancing_frag,
                                    edge_instancing_geo);
 
-    auto &edgeVAO = edgeLine.vao();
-    edgeVAO.bind();
-    edgeVAO.enableAttrib(1);
-    edgeVAO.attribPointer(1, edgeOffsets, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    auto &latticeEdgeVAO = latticeEdge.vao();
+    latticeEdgeVAO.bind();
+    latticeEdgeVAO.enableAttrib(1);
+    latticeEdgeVAO.attribPointer(1, latticeEdgeStarts, 3, GL_FLOAT, GL_FALSE, 0,
+                                 0);
     glVertexAttribDivisor(1, 1);
 
-    edgeVAO.enableAttrib(2);
-    edgeVAO.attribPointer(2, edgeEndOffsets, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    latticeEdgeVAO.enableAttrib(2);
+    latticeEdgeVAO.attribPointer(2, latticeEdgeEnds, 3, GL_FLOAT, GL_FALSE, 0,
+                                 0);
+    glVertexAttribDivisor(2, 1);
+
+    auto &sliceEdgeVAO = sliceEdge.vao();
+    sliceEdgeVAO.bind();
+    sliceEdgeVAO.enableAttrib(1);
+    sliceEdgeVAO.attribPointer(1, sliceEdgeStarts, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    glVertexAttribDivisor(1, 1);
+
+    sliceEdgeVAO.enableAttrib(2);
+    sliceEdgeVAO.attribPointer(2, sliceEdgeEnds, 3, GL_FLOAT, GL_FALSE, 0, 0);
     glVertexAttribDivisor(2, 1);
 
     return registerCallbacks();
@@ -289,26 +368,6 @@ public:
       }
     }
 
-    if (ImGui::CollapsingHeader("Add Particles",
-                                ImGuiTreeNodeFlags_CollapsingHeader)) {
-      ParameterGUI::draw(&particle1);
-      ParameterGUI::draw(&particle2);
-      ParameterGUI::draw(&particle3);
-      if (crystalDim.get() > 3) {
-        ParameterGUI::draw(&particle4);
-        if (crystalDim.get() > 4) {
-          ParameterGUI::draw(&particle5);
-        }
-      }
-      ParameterGUI::draw(&particleSphereSize);
-      ParameterGUI::draw(&particleSphereColor);
-      ParameterGUI::draw(&addParticle);
-      ImGui::SameLine();
-      ParameterGUI::draw(&removeParticle);
-    }
-
-    ImGui::NewLine();
-
     ParameterGUI::draw(&showLattice);
     if (showLattice.get()) {
       ImGui::SameLine();
@@ -352,7 +411,7 @@ public:
     if (showSlice.get()) {
       ParameterGUI::draw(&sliceDim);
       ParameterGUI::draw(&sliceDepth);
-      ParameterGUI::draw(&recreateEdges);
+      ParameterGUI::draw(&recomputeEdges);
       ParameterGUI::draw(&edgeThreshold);
 
       ImGui::NewLine();
@@ -381,6 +440,9 @@ public:
       }
       ImGui::Unindent();
     }
+
+    ParameterGUI::draw(&boxMin);
+    ParameterGUI::draw(&boxMax);
 
     ImGui::NewLine();
 
@@ -421,8 +483,6 @@ public:
         drawLatticeEdges(g);
       }
       drawLattice(g);
-
-      drawLatticeParticles(g);
     }
 
     if (showSlicePlane.get()) {
@@ -440,63 +500,68 @@ public:
   }
 
   void drawLattice(Graphics &g) {
-    // g.color(latticeSphereColor.get());
-    // lattice->drawLattice(g, latticeSphere, latticeSphereSize.get());
-    lattice->updateBuffer(latticeOffsets);
+    lattice->updateBuffer(latticeVertices);
 
     g.shader(instancing_shader);
     g.shader().uniform("scale", latticeSphereSize.get());
+    g.shader().uniform("useColorCode", 0.f);
     g.shader().uniform("color", latticeSphereColor.get());
+    g.shader().uniform("boxMin", boxMin.get());
+    g.shader().uniform("boxMax", boxMax.get());
     g.update();
 
     latticeSphere.vao().bind();
     latticeSphere.indexBuffer().bind();
     glDrawElementsInstanced(GL_TRIANGLES, latticeSphere.indices().size(),
-                            GL_UNSIGNED_INT, 0, lattice->getLatticeVertexNum());
+                            GL_UNSIGNED_INT, 0, lattice->getVertexNum());
   }
 
   void drawLatticeEdges(Graphics &g) {
-    g.color(latticeEdgeColor.get());
-    lattice->drawEdges(g);
-  }
+    lattice->updateEdgeBuffers(latticeEdgeStarts, latticeEdgeEnds);
 
-  void drawLatticeParticles(Graphics &g) {
-    lattice->drawParticles(g, latticeSphere);
+    g.shader(edge_instancing_shader);
+    g.shader().uniform("color", latticeEdgeColor.get());
+    g.shader().uniform("boxMin", boxMin.get());
+    g.shader().uniform("boxMax", boxMax.get());
+    g.update();
+
+    latticeEdge.vao().bind();
+    glDrawArraysInstanced(GL_LINES, 0, latticeEdge.vertices().size(),
+                          lattice->getEdgeNum());
   }
 
   void drawSlice(Graphics &g) {
     g.color(slicePlaneColor.get());
     slice->drawPlane(g);
 
-    // g.color(sliceSphereColor.get());
-    slice->updateBuffer(sliceOffsets);
+    slice->updateVertexBuffer(sliceVertices, sliceColors);
 
     g.shader(instancing_shader);
     g.shader().uniform("scale", sliceSphereSize.get());
+    g.shader().uniform("useColorCode", recomputeEdges.get());
     g.shader().uniform("color", sliceSphereColor.get());
+    g.shader().uniform("boxMin", boxMin.get());
+    g.shader().uniform("boxMax", boxMax.get());
     g.update();
 
     sliceSphere.vao().bind();
     sliceSphere.indexBuffer().bind();
     glDrawElementsInstanced(GL_TRIANGLES, sliceSphere.indices().size(),
-                            GL_UNSIGNED_INT, 0, slice->getSliceVertexNum());
-
-    // slice->drawSlice(g, sliceSphere, sliceSphereSize.get());
+                            GL_UNSIGNED_INT, 0, slice->getVertexNum());
   }
 
   void drawSliceEdges(Graphics &g) {
-    // g.color(sliceEdgeColor.get());
-    // slice->drawEdges(g);
-
-    slice->updateEdgeBuffers(edgeOffsets, edgeEndOffsets);
+    slice->updateEdgeBuffers(sliceEdgeStarts, sliceEdgeEnds);
 
     g.shader(edge_instancing_shader);
     g.shader().uniform("color", sliceEdgeColor.get());
+    g.shader().uniform("boxMin", boxMin.get());
+    g.shader().uniform("boxMax", boxMax.get());
     g.update();
 
-    edgeLine.vao().bind();
-    glDrawArraysInstanced(GL_LINES, 0, edgeLine.vertices().size(),
-                          slice->getSliceEdgeNum());
+    sliceEdge.vao().bind();
+    glDrawArraysInstanced(GL_LINES, 0, sliceEdge.vertices().size(),
+                          slice->getEdgeNum());
   }
 
   void drawBox(Graphics &g) {
@@ -525,8 +590,6 @@ public:
 
     dataDir.copy(filePath, sizeof filePath - 1);
 
-    particleSphereColor.setHint("showAlpha", true);
-    particleSphereColor.setHint("hsv", true);
     latticeSphereColor.setHint("showAlpha", true);
     latticeSphereColor.setHint("hsv", true);
     latticeEdgeColor.setHint("showAlpha", true);
@@ -744,35 +807,12 @@ public:
       lattice->setAxis(newAxis);
     });
 
-    particle1.registerChangeCallback(
-        [&](float value) { lattice->setParticle(value, 0); });
-
-    particle2.registerChangeCallback(
-        [&](float value) { lattice->setParticle(value, 1); });
-
-    particle3.registerChangeCallback(
-        [&](float value) { lattice->setParticle(value, 2); });
-
-    particle4.registerChangeCallback(
-        [&](float value) { lattice->setParticle(value, 3); });
-
-    particle5.registerChangeCallback(
-        [&](float value) { lattice->setParticle(value, 4); });
-
-    particleSphereSize.registerChangeCallback(
-        [&](float value) { lattice->setParticleSize(value); });
-
-    particleSphereColor.registerChangeCallback(
-        [&](Color value) { lattice->setParticleColor(value); });
-
-    addParticle.registerChangeCallback(
-        [&](bool value) { lattice->addParticle(); });
-
-    removeParticle.registerChangeCallback(
-        [&](bool value) { lattice->removeParticle(); });
-
-    enableLatticeEdge.registerChangeCallback(
-        [&](bool value) { lattice->enableEdges = value; });
+    enableLatticeEdge.registerChangeCallback([&](bool value) {
+      lattice->enableEdges = value;
+      if (value) {
+        lattice->updateEdges();
+      }
+    });
 
     enableSliceEdge.registerChangeCallback([&](bool value) {
       slice->enableEdges = value;
@@ -798,8 +838,8 @@ public:
       slice->update();
     });
 
-    recreateEdges.registerChangeCallback([&](bool value) {
-      slice->recreateEdges = value;
+    recomputeEdges.registerChangeCallback([&](bool value) {
+      slice->recomputeEdges = value;
       slice->updateEdges();
     });
 
@@ -872,8 +912,10 @@ private:
   std::shared_ptr<AbstractLattice> lattice;
   std::shared_ptr<AbstractSlice> slice;
 
-  VAOMesh latticeSphere, sliceSphere, edgeLine;
-  BufferObject latticeOffsets, sliceOffsets, edgeOffsets, edgeEndOffsets;
+  VAOMesh latticeSphere, latticeEdge, sliceSphere, sliceEdge;
+  BufferObject latticeVertices, latticeColors, latticeEdgeStarts,
+      latticeEdgeEnds;
+  BufferObject sliceVertices, sliceColors, sliceEdgeStarts, sliceEdgeEnds;
   ShaderProgram instancing_shader, edge_instancing_shader;
 
   ParameterInt crystalDim{"crystalDim", "", 3, 3, 5};
@@ -892,17 +934,6 @@ private:
   ParameterBool axis3{"Z", "", 1};
   ParameterBool axis4{"W", "", 0};
   ParameterBool axis5{"A5", "", 0};
-
-  Parameter particle1{"particle1", "", 0.5, 0, 1};
-  Parameter particle2{"particle2", "", 0.5, 0, 1};
-  Parameter particle3{"particle3", "", 0.5, 0, 1};
-  Parameter particle4{"particle4", "", 0.5, 0, 1};
-  Parameter particle5{"particle5", "", 0.5, 0, 1};
-  Parameter particleSphereSize{"particleSphereSize", "", 0.02, 0.001, 1};
-  ParameterColor particleSphereColor{"particleSphereColor", "",
-                                     Color(1.f, 0.2f, 0.2f, 0.8f)};
-  Trigger addParticle{"addParticle", ""};
-  Trigger removeParticle{"removeParticle", ""};
 
   ParameterBool showLattice{"showLattice", "", 1};
   ParameterBool enableLatticeEdge{"enableLatticeEdge", "", 0};
@@ -927,7 +958,7 @@ private:
   ParameterInt sliceDim{"sliceDim", "", 2, 2, 2};
   Parameter sliceDepth{"sliceDepth", "", 0, 0, 10.f};
 
-  ParameterBool recreateEdges{"recreateEdges", ""};
+  ParameterBool recomputeEdges{"recomputeEdges", ""};
   Parameter edgeThreshold{"edgeThreshold", "", 1.1f, 0.f, 2.f};
 
   ParameterInt millerNum{"millerNum", "", 0, 0, 0};
@@ -937,6 +968,9 @@ private:
   Parameter miller3{"miller3", "", 0, -5, 5};
   Parameter miller4{"miller4", "", 0, -5, 5};
   Parameter miller5{"miller5", "", 0, -5, 5};
+
+  ParameterVec3 boxMin{"boxMin", "", Vec3f{0, 0, 0}};
+  ParameterVec3 boxMax{"boxMax", "", Vec3f{1, 1, 1}};
 
   std::string dataDir;
   char filePath[128]{};

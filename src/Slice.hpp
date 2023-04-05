@@ -44,20 +44,19 @@ struct AbstractSlice {
   virtual void roundMiller() = 0;
 
   virtual Vec3f getNormal() = 0;
-  virtual int getSliceVertexNum() = 0;
-  virtual int getSliceEdgeNum() = 0;
+  virtual int getVertexNum() = 0;
+  virtual int getEdgeNum() = 0;
 
   virtual void setWindow(float newWindowSize, float newWindowDepth) = 0;
 
   virtual void update() = 0;
   virtual void updateEdges() = 0;
 
-  virtual void updateBuffer(BufferObject &buffer) = 0;
+  virtual void updateVertexBuffer(BufferObject &vertexbuffer,
+                                  BufferObject &colorBuffer) = 0;
   virtual void updateEdgeBuffers(BufferObject &startBuffer,
                                  BufferObject &endBuffer) = 0;
-  virtual void drawSlice(Graphics &g, VAOMesh &mesh,
-                         const float &sphereSize) = 0;
-  virtual void drawEdges(Graphics &g) = 0;
+
   virtual void drawPlane(Graphics &g) = 0;
   virtual void drawBox(Graphics &g) = 0;
   virtual void drawBoxNodes(Graphics &g, VAOMesh &mesh) = 0;
@@ -69,7 +68,7 @@ struct AbstractSlice {
   int sliceDim;
 
   bool enableEdges{false};
-  bool recreateEdges{false};
+  bool recomputeEdges{false};
   bool dirty{false};
   bool dirtyEdges{false};
   bool busy{false};
@@ -88,6 +87,8 @@ template <int N, int M> struct Slice : AbstractSlice {
 
   std::vector<Vec<N, float>> planeVertices;
   std::vector<Vec3f> subspaceVertices;
+  std::vector<int> connectivity;
+  std::vector<Color> colors;
   std::vector<Vec3f> edgeStarts;
   std::vector<Vec3f> edgeEnds;
 
@@ -123,7 +124,7 @@ template <int N, int M> struct Slice : AbstractSlice {
       }
     } else {
       enableEdges = oldSlice->enableEdges;
-      recreateEdges = oldSlice->recreateEdges;
+      recomputeEdges = oldSlice->recomputeEdges;
       edgeThreshold = oldSlice->edgeThreshold;
       windowSize = oldSlice->windowSize;
       windowDepth = oldSlice->windowDepth;
@@ -179,8 +180,8 @@ template <int N, int M> struct Slice : AbstractSlice {
     return newNorm;
   }
 
-  virtual int getSliceVertexNum() { return subspaceVertices.size(); }
-  virtual int getSliceEdgeNum() { return edgeStarts.size(); }
+  virtual int getVertexNum() { return subspaceVertices.size(); }
+  virtual int getEdgeNum() { return edgeStarts.size(); }
 
   virtual void setWindow(float newWindowSize, float newWindowDepth) {
     windowSize = newWindowSize;
@@ -283,25 +284,41 @@ template <int N, int M> struct Slice : AbstractSlice {
       }
     }
 
-    if (enableEdges) {
-      updateEdges();
-    }
+    updateEdges();
   }
 
   virtual void updateEdges() {
+    if (!enableEdges)
+      return;
+
     dirtyEdges = true;
     edgeStarts.clear();
     edgeEnds.clear();
 
-    if (recreateEdges) {
+    if (recomputeEdges) {
+      colors.clear();
+      connectivity.resize(subspaceVertices.size());
+      for (auto &c : connectivity) {
+        c = 0;
+      }
+
       for (int i = 0; i < subspaceVertices.size(); ++i) {
+        float maxDist = 0;
+
         for (int j = i + 1; j < subspaceVertices.size(); ++j) {
           Vec3f dist = subspaceVertices[i] - subspaceVertices[j];
           if (dist.mag() < edgeThreshold) {
             edgeStarts.push_back(subspaceVertices[i]);
             edgeEnds.push_back(subspaceVertices[j]);
+            maxDist = maxDist < dist.mag() ? dist.mag() : maxDist;
+            connectivity[i] += 1;
+            connectivity[j] += 1;
           }
         }
+        // HSV hsv(maxDist);
+        HSV hsv(connectivity[i] / 4.f);
+        hsv.wrapHue();
+        colors.emplace_back(hsv);
       }
     } else {
       for (auto &e : lattice->edgeIdx) {
@@ -323,75 +340,20 @@ template <int N, int M> struct Slice : AbstractSlice {
         }
       }
     }
-
-    // planeEdges.reset();
-    // planeEdges.primitive(Mesh::LINES);
-    // boxEdges.reset();
-    // boxEdges.primitive(Mesh::LINES);
-
-    // for (auto &e : lattice->edgeIdx) {
-    //   // auto it1 = std::find_if(
-    //   //     boxVertices.begin(), boxVertices.end(),
-    //   //     [&e](const std::pair<unsigned int, unsigned int> &element) {
-    //   //       return element.first == e.first;
-    //   //     });
-    //   // auto it2 = std::find_if(
-    //   //     boxVertices.begin(), boxVertices.end(),
-    //   //     [&e](const std::pair<unsigned int, unsigned int> &element) {
-    //   //       return element.first == e.second;
-    //   //     });
-
-    //  Vec<N - M, float> dist1 = distanceToPlane((lattice->vertices[e.first]));
-    //  Vec<N - M, float> dist2 =
-    //  distanceToPlane((lattice->vertices[e.second])); if (dist1.mag() <
-    //  windowDepth && dist2.mag() < windowDepth) {
-    //    boxEdges.vertex(lattice->vertices[e.first]);
-    //    boxEdges.vertex(lattice->vertices[e.second]);
-    //    Vec<N, float> projVertex1 = lattice->vertices[e.first];
-    //    Vec<N, float> projVertex2 = lattice->vertices[e.second];
-    //    for (int i = 0; i < N - M; ++i) {
-    //      projVertex1 -= dist1[i] * normal[i];
-    //      projVertex2 -= dist2[i] * normal[i];
-    //    }
-    //    planeEdges.vertex(projVertex1);
-    //    planeEdges.vertex(projVertex2);
-    //  }
-    //}
-    // planeEdges.update();
-    // boxEdges.update();
   }
 
-  virtual void drawSlice(Graphics &g, VAOMesh &mesh, const float &sphereSize) {
-    for (auto &v : subspaceVertices) {
-      // for (auto &v : planeVertices) {
-      g.pushMatrix();
-      // TODO: consider projection
-      // if (lattice->viewAxis.size() == 3) {
-      //  g.translate(v[lattice->viewAxis[0]], v[lattice->viewAxis[1]],
-      //              v[lattice->viewAxis[2]]);
-      //} else if (lattice->viewAxis.size() == 2) {
-      //  g.translate(v[lattice->viewAxis[0]], v[lattice->viewAxis[1]]);
-      //} else if (lattice->viewAxis.size() == 1) {
-      //  g.translate(v[lattice->viewAxis[0]], 0);
-      //}
-      //
-      if (M == 2) {
-        g.translate(v[0], v[1]);
-      } else if (M == 3) {
-        g.translate(v[0], v[1], v[2]);
-      }
-      // g.translate(v[0], v[1], v[2]);
-      g.scale(sphereSize);
-      g.draw(mesh);
-      g.popMatrix();
-    }
-  }
-
-  virtual void updateBuffer(BufferObject &buffer) {
+  virtual void updateVertexBuffer(BufferObject &vertexBuffer,
+                                  BufferObject &colorBuffer) {
     if (dirty) {
-      buffer.bind();
-      buffer.data(subspaceVertices.size() * 3 * sizeof(float),
-                  subspaceVertices.data());
+      vertexBuffer.bind();
+      vertexBuffer.data(subspaceVertices.size() * 3 * sizeof(float),
+                        subspaceVertices.data());
+
+      if (recomputeEdges) {
+        colorBuffer.bind();
+        colorBuffer.data(colors.size() * 4 * sizeof(float), colors.data());
+      }
+
       dirty = false;
     }
   }
@@ -409,8 +371,6 @@ template <int N, int M> struct Slice : AbstractSlice {
       dirtyEdges = false;
     }
   }
-
-  virtual void drawEdges(Graphics &g) { g.draw(planeEdges); }
 
   virtual void drawPlane(Graphics &g) {
     g.pushMatrix();
