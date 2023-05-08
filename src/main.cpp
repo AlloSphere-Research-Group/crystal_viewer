@@ -2,14 +2,18 @@
 #include <memory>
 #include <vector>
 
-#include "al/app/al_App.hpp"
+#include "al/app/al_DistributedApp.hpp"
 #include "al/ui/al_ParameterGUI.hpp"
 
 #include "CrystalViewer.hpp"
 
 using namespace al;
 
-struct MyApp : App {
+struct State {
+  Pose pose;
+};
+
+struct CrystalApp : DistributedAppWithState<State> {
   CrystalViewer viewer;
 
   void onCreate() override {
@@ -21,17 +25,24 @@ struct MyApp : App {
       quit();
     }
 
-    // hasCapability(Capability::CAP_2DGUI)
-    imguiInit();
+    if (hasCapability(Capability::CAP_2DGUI)) {
+      imguiInit();
+    }
   }
 
   void onAnimate(double dt) override {
-    // hasCapability(Capability::CAP_2DGUI)
-    imguiBeginFrame();
+    if (hasCapability(Capability::CAP_2DGUI)) {
+      imguiBeginFrame();
 
-    viewer.setGUIFrame(navControl());
+      viewer.setGUIFrame(navControl());
 
-    imguiEndFrame();
+      imguiEndFrame();
+    }
+    if (isPrimary()) {
+      state().pose = nav();
+    } else {
+      nav().set(state().pose);
+    }
   }
 
   void onDraw(Graphics &g) override {
@@ -39,8 +50,9 @@ struct MyApp : App {
 
     viewer.draw(g, nav());
 
-    // hasCapability(Capability::CAP_2DGUI)
-    imguiDraw();
+    if (hasCapability(Capability::CAP_2DGUI)) {
+      imguiDraw();
+    }
   }
 
   bool onMouseMove(const Mouse &m) override {
@@ -69,13 +81,14 @@ struct MyApp : App {
   }
 
   void onExit() {
-    // hasCapability(Capability::CAP_2DGUI)
-    imguiShutdown();
+    if (hasCapability(Capability::CAP_2DGUI)) {
+      imguiShutdown();
+    }
   }
 };
 
 int main() {
-  MyApp app;
+  CrystalApp app;
   app.dimensions(1200, 800);
   // app.dimensions(1920, 1080);
   app.start();
