@@ -173,7 +173,7 @@ void main()
 
 class CrystalViewer {
 public:
-  bool init() {
+  bool init(ParameterServer &parameterServer) {
     generate(crystalDim.get(), sliceDim.get());
 
     addSphere(latticeSphere, 1.0);
@@ -269,7 +269,7 @@ public:
     sliceEdgeVAO.attribPointer(2, sliceEdgeEnds, 3, GL_FLOAT, GL_FALSE, 0, 0);
     glVertexAttribDivisor(2, 1);
 
-    return registerCallbacks();
+    return registerCallbacks(parameterServer);
   }
 
   void generate(int newDim, int newSliceDim) {
@@ -550,7 +550,7 @@ public:
     slice->drawBoxNodes(g, sliceSphere);
   }
 
-  bool registerCallbacks() {
+  bool registerCallbacks(ParameterServer &parameterServer) {
     dataDir = File::conformPathToOS(File::currentPath());
 
     // remove bin directory from path
@@ -742,6 +742,16 @@ public:
       slice->exportToJson(newPath);
     });
 
+    parameterServer << crystalDim << latticeSize << basisNum << basis1 << basis2
+                    << basis3 << basis4 << basis5 << resetBasis << showLattice
+                    << enableLatticeEdge << showSlice << enableSliceEdge
+                    << showSlicePlane << latticeSphereSize << latticeSphereColor
+                    << latticeEdgeColor << sliceSphereSize << sliceSphereColor
+                    << sliceEdgeColor << slicePlaneSize << slicePlaneColor
+                    << sliceDim << sliceDepth << recomputeEdges << edgeThreshold
+                    << millerNum << intMiller << miller1 << miller2 << miller3
+                    << miller4 << miller5 << boxMin << boxMax;
+
     return true;
   }
 
@@ -806,7 +816,7 @@ private:
 
   std::string dataDir;
   char filePath[128]{};
-  char fileName[128]{"01"};
+  char fileName[128]{};
   Trigger exportTxt{"ExportTxt", ""};
   Trigger exportJson{"ExportJson", ""};
 };

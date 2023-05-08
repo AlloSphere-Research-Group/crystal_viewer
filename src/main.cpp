@@ -20,7 +20,7 @@ struct CrystalApp : DistributedAppWithState<State> {
     lens().near(0.1).far(100).fovy(45);
     nav().pos(0, 0, 4);
 
-    if (!viewer.init()) {
+    if (!viewer.init(parameterServer())) {
       std::cerr << "Crystal viewer failed to initialize" << std::endl;
       quit();
     }
