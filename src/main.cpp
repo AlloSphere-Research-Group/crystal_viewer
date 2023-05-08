@@ -17,6 +17,7 @@ struct MyApp : App {
     nav().pos(0, 0, 4);
 
     if (!viewer.init()) {
+      std::cerr << "Crystal viewer failed to initialize" << std::endl;
       quit();
     }
 
@@ -40,6 +41,31 @@ struct MyApp : App {
 
     // hasCapability(Capability::CAP_2DGUI)
     imguiDraw();
+  }
+
+  bool onMouseMove(const Mouse &m) override {
+    viewer.getSlice()->pickableManager.onMouseMove(graphics(), m, width(),
+                                                   height());
+    return true;
+  }
+
+  bool onMouseDown(const Mouse &m) override {
+    viewer.getSlice()->pickableManager.onMouseDown(graphics(), m, width(),
+                                                   height());
+    viewer.getSlice()->updatePickables();
+    return true;
+  }
+
+  /*bool onMouseDrag(const Mouse &m) override {
+    viewer.getSlice()->pickableManager.onMouseDrag(graphics(), m, width(),
+                                                   height());
+    return true;
+  }*/
+
+  bool onMouseUp(const Mouse &m) override {
+    viewer.getSlice()->pickableManager.onMouseUp(graphics(), m, width(),
+                                                 height());
+    return true;
   }
 
   void onExit() {

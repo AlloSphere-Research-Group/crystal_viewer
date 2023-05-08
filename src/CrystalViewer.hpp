@@ -61,7 +61,7 @@ uniform vec3 boxMax;
 
 layout (location = 0) in vec3 position;
 layout (location = 1) in vec3 offset;
-layout (location = 2) in vec4 colors;
+//layout (location = 2) in vec4 colors;
 
 out vec4 colorCode;
 
@@ -75,9 +75,10 @@ void main()
   vec4 p = vec4(scale * position + offset, 1.0);
   gl_Position = al_ProjectionMatrix * al_ModelViewMatrix * p;
   
-  colorCode = useColorCode * colors + (1 - useColorCode) * color;
+  colorCode = color;
+  //colorCode = useColorCode * colors + (1 - useColorCode) * color;
   float ib = insideBox(offset);
-  colorCode.a = 0.01 + 0.99 * ib;
+  colorCode.a = 0.05 + 0.95 * ib;
   // we also have access to index of instance,
   // for example, when drawing 100 instances,
   // `gl_InstanceID` goes 0 to 99
@@ -166,7 +167,7 @@ layout (location = 0) out vec4 frag_out0;
 
 void main()
 {
-  frag_out0 = vec4(color.rgb, 0.01 + color.a * 0.99 * isInBox);
+  frag_out0 = vec4(color.rgb, 0.05 + color.a * 0.95 * isInBox);
 }
 )";
 
@@ -316,8 +317,6 @@ public:
     slice->update();
   }
 
-  Vec3f getNormal() { return slice->getNormal(); }
-
   void setGUIFrame(NavInputControl &navControl) {
     ImGui::Begin("Crystal");
 
@@ -351,23 +350,6 @@ public:
       ImGui::Unindent();
     }
 
-    if (ImGui::CollapsingHeader("Edit Viewing Dimension",
-                                ImGuiTreeNodeFlags_CollapsingHeader)) {
-      ParameterGUI::draw(&axis1);
-      ImGui::SameLine();
-      ParameterGUI::draw(&axis2);
-      ImGui::SameLine();
-      ParameterGUI::draw(&axis3);
-      if (crystalDim.get() > 3) {
-        ImGui::SameLine();
-        ParameterGUI::draw(&axis4);
-        if (crystalDim.get() > 4) {
-          ImGui::SameLine();
-          ParameterGUI::draw(&axis5);
-        }
-      }
-    }
-
     ParameterGUI::draw(&showLattice);
     if (showLattice.get()) {
       ImGui::SameLine();
@@ -379,8 +361,6 @@ public:
     ParameterGUI::draw(&enableSliceEdge);
 
     ParameterGUI::draw(&showSlicePlane);
-    ImGui::SameLine();
-    ParameterGUI::draw(&lockCameraToSlice);
 
     if (ImGui::CollapsingHeader("Edit Display Settings",
                                 ImGuiTreeNodeFlags_CollapsingHeader)) {
@@ -473,11 +453,6 @@ public:
 
     g.pushMatrix();
 
-    if (lockCameraToSlice.get()) {
-      Quatf rot = Quatf::getRotationTo(getNormal(), nav.uf());
-      g.rotate(rot);
-    }
-
     if (showLattice.get()) {
       if (enableLatticeEdge.get()) {
         drawLatticeEdges(g);
@@ -496,11 +471,13 @@ public:
       drawSlice(g);
     }
 
+    slice->drawPickable(g);
+
     g.popMatrix();
   }
 
   void drawLattice(Graphics &g) {
-    lattice->updateBuffer(latticeVertices);
+    lattice->updateBuffer(latticeVertices, latticeColors);
 
     g.shader(instancing_shader);
     g.shader().uniform("scale", latticeSphereSize.get());
@@ -667,146 +644,6 @@ public:
       }
     });
 
-    axis1.registerChangeCallback([&](bool value) {
-      std::vector<int> newAxis;
-      if (value) {
-        newAxis.push_back(0);
-      }
-      if (axis2.get()) {
-        newAxis.push_back(1);
-      }
-      if (axis3.get()) {
-        newAxis.push_back(2);
-      }
-      if (crystalDim.get() > 3) {
-        if (axis4.get()) {
-          newAxis.push_back(3);
-        }
-        if (crystalDim.get() > 4) {
-          if (axis5.get()) {
-            newAxis.push_back(4);
-          }
-        }
-      }
-
-      if (newAxis.size() > 3) {
-        newAxis.resize(3);
-      }
-      lattice->setAxis(newAxis);
-    });
-
-    axis2.registerChangeCallback([&](bool value) {
-      std::vector<int> newAxis;
-      if (axis1.get()) {
-        newAxis.push_back(0);
-      }
-      if (value) {
-        newAxis.push_back(1);
-      }
-      if (axis3.get()) {
-        newAxis.push_back(2);
-      }
-      if (crystalDim.get() > 3) {
-        if (axis4.get()) {
-          newAxis.push_back(3);
-        }
-        if (crystalDim.get() > 4) {
-          if (axis5.get()) {
-            newAxis.push_back(4);
-          }
-        }
-      }
-
-      if (newAxis.size() > 3) {
-        newAxis.resize(3);
-      }
-      lattice->setAxis(newAxis);
-    });
-
-    axis3.registerChangeCallback([&](bool value) {
-      std::vector<int> newAxis;
-      if (axis1.get()) {
-        newAxis.push_back(0);
-      }
-      if (axis2.get()) {
-        newAxis.push_back(1);
-      }
-      if (value) {
-        newAxis.push_back(2);
-      }
-      if (crystalDim.get() > 3) {
-        if (axis4.get()) {
-          newAxis.push_back(3);
-        }
-        if (crystalDim.get() > 4) {
-          if (axis5.get()) {
-            newAxis.push_back(4);
-          }
-        }
-      }
-
-      if (newAxis.size() > 3) {
-        newAxis.resize(3);
-      }
-      lattice->setAxis(newAxis);
-    });
-
-    axis4.registerChangeCallback([&](bool value) {
-      std::vector<int> newAxis;
-      if (axis1.get()) {
-        newAxis.push_back(0);
-      }
-      if (axis2.get()) {
-        newAxis.push_back(1);
-      }
-      if (axis3.get()) {
-        newAxis.push_back(2);
-      }
-      if (crystalDim.get() > 3) {
-        if (value) {
-          newAxis.push_back(3);
-        }
-        if (crystalDim.get() > 4) {
-          if (axis5.get()) {
-            newAxis.push_back(4);
-          }
-        }
-      }
-
-      if (newAxis.size() > 3) {
-        newAxis.resize(3);
-      }
-      lattice->setAxis(newAxis);
-    });
-
-    axis5.registerChangeCallback([&](bool value) {
-      std::vector<int> newAxis;
-      if (axis1.get()) {
-        newAxis.push_back(0);
-      }
-      if (axis2.get()) {
-        newAxis.push_back(1);
-      }
-      if (axis3.get()) {
-        newAxis.push_back(2);
-      }
-      if (crystalDim.get() > 3) {
-        if (axis4.get()) {
-          newAxis.push_back(3);
-        }
-        if (crystalDim.get() > 4) {
-          if (value) {
-            newAxis.push_back(4);
-          }
-        }
-      }
-
-      if (newAxis.size() > 3) {
-        newAxis.resize(3);
-      }
-      lattice->setAxis(newAxis);
-    });
-
     enableLatticeEdge.registerChangeCallback([&](bool value) {
       lattice->enableEdges = value;
       if (value) {
@@ -908,6 +745,8 @@ public:
     return true;
   }
 
+  AbstractSlice *getSlice() { return slice.get(); }
+
 private:
   std::shared_ptr<AbstractLattice> lattice;
   std::shared_ptr<AbstractSlice> slice;
@@ -929,18 +768,11 @@ private:
   Parameter basis5{"basis5", "", 0, -5, 5};
   Trigger resetBasis{"resetBasis", ""};
 
-  ParameterBool axis1{"X", "", 1};
-  ParameterBool axis2{"Y", "", 1};
-  ParameterBool axis3{"Z", "", 1};
-  ParameterBool axis4{"W", "", 0};
-  ParameterBool axis5{"A5", "", 0};
-
-  ParameterBool showLattice{"showLattice", "", 1};
+  ParameterBool showLattice{"showLattice", "", 0};
   ParameterBool enableLatticeEdge{"enableLatticeEdge", "", 0};
   ParameterBool showSlice{"showSlice", "", 1};
   ParameterBool enableSliceEdge{"enableSliceEdge", "", 0};
   ParameterBool showSlicePlane{"showSlicePlane", "", 0};
-  ParameterBool lockCameraToSlice{"lockCameraToSlice", "", 0};
 
   Parameter latticeSphereSize{"latticeSphereSize", "", 0.02, 0.001, 1};
   ParameterColor latticeSphereColor{"latticeSphereColor", "", Color(1.f, 0.8f)};

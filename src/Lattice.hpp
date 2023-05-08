@@ -61,9 +61,8 @@ struct AbstractLattice {
   virtual int getVertexNum() = 0;
   virtual int getEdgeNum() = 0;
 
-  virtual void setAxis(std::vector<int> &newAxis) = 0;
-
-  virtual void updateBuffer(BufferObject &buffer) = 0;
+  virtual void updateBuffer(BufferObject &buffer,
+                            BufferObject &colorBuffer) = 0;
   virtual void updateEdgeBuffers(BufferObject &startBuffer,
                                  BufferObject &endBuffer) = 0;
 
@@ -71,28 +70,32 @@ struct AbstractLattice {
   int latticeSize{1};
 
   bool enableEdges{false};
+
   bool dirty{false};
   bool dirtyEdges{false};
-  bool busy{false};
 };
 
 template <int N> struct Lattice : AbstractLattice {
   std::array<Vec<N, float>, N> basis;
-  std::vector<Vec<N, float>> vertices;
-  std::vector<Vec<N, int>> offsets;
+  std::vector<Vec<N, float>> extraPoints;
+
+  std::vector<Vec<N, float>> unitCell;
 
   std::vector<Vec<N, int>> vertexIdx;
-
-  std::vector<int> viewAxis{0, 1, 2};
-
   std::vector<std::pair<int, int>> edgeIdx;
+
+  std::vector<Vec<N, float>> vertices;
 
   std::vector<Vec3f> projectedVertices;
   std::vector<Vec3f> edgeStarts;
   std::vector<Vec3f> edgeEnds;
 
+  // TODO: remove dummyColor
+  Color dummyColor;
+
   Lattice() {
     dim = N;
+
     for (int i = 0; i < N; ++i) {
       Vec<N, float> newVec(0);
       newVec[i] = 1.f;
@@ -109,10 +112,12 @@ template <int N> struct Lattice : AbstractLattice {
       for (int i = 0; i < N; ++i) {
         Vec<N, float> newVec(0);
         newVec[i] = 1.f;
-        // basis.push_back(newVec);
+
         basis[i] = newVec;
       }
     } else {
+      enableEdges = oldLattice->enableEdges;
+
       for (int i = 0; i < dim; ++i) {
         Vec<N, float> newVec(0);
         if (i < oldLattice->dim) {
@@ -122,7 +127,7 @@ template <int N> struct Lattice : AbstractLattice {
         } else {
           newVec[i] = 1.f;
         }
-        // basis.push_back(newVec);
+
         basis[i] = newVec;
       }
     }
@@ -136,19 +141,6 @@ template <int N> struct Lattice : AbstractLattice {
   }
 
   void createLattice() {
-    // int num = latticeSize + 1;
-    // int totalNum = std::pow(num, N);
-    // for (int i = 0; i < totalNum; ++i) {
-    //   Vec<N, int> newIdx(0);
-    //   int k = i;
-    //   newIdx[0] = i % num;
-    //   for (int j = 1; j < N; ++j) {
-    //     newIdx[j] = k / num;
-    //
-    //   }
-    //   newIdx.print();
-    // }
-
     vertexIdx.clear();
 
     Vec<N, int> newIdx(-latticeSize);
@@ -168,23 +160,35 @@ template <int N> struct Lattice : AbstractLattice {
       vertexIdx.push_back(newIdx);
     }
 
+    vertices.resize(vertexIdx.size());
+    projectedVertices.resize(vertexIdx.size());
+
+    // edgeIdx.clear();
+
+    // for (int i = 0; i < vertexIdx.size() - 1; ++i) {
+    //   for (int j = i + 1; j < vertexIdx.size(); ++j) {
+    //     if ((vertexIdx[i] - vertexIdx[j]).sumAbs() == 1) {
+    //       edgeIdx.push_back({i, j});
+    //     }
+    //   }
+    // }
+
+    // edgeStarts.resize(edgeIdx.size());
+    // edgeEnds.resize(edgeIdx.size());
+
     update();
   }
 
   virtual void update() {
     dirty = true;
 
-    // TODO: check if clear can be avoided
-    vertices.clear();
-    projectedVertices.clear();
-
-    for (auto &v : vertexIdx) {
+    for (int i = 0; i < vertexIdx.size(); ++i) {
       Vec<N, float> newVec(0);
-      for (int i = 0; i < N; ++i) {
-        newVec += (float)v[i] * basis[i];
+      for (int j = 0; j < N; ++j) {
+        newVec += (float)vertexIdx[i][j] * basis[j];
       }
-      vertices.push_back(newVec);
-      projectedVertices.push_back(project(newVec));
+      vertices[i] = newVec;
+      projectedVertices[i] = project(newVec);
     }
 
     updateEdges();
@@ -195,18 +199,10 @@ template <int N> struct Lattice : AbstractLattice {
       return;
 
     dirtyEdges = true;
-    edgeIdx.clear();
-    edgeStarts.clear();
-    edgeEnds.clear();
 
-    for (int i = 0; i < vertexIdx.size() - 1; ++i) {
-      for (int j = i + 1; j < vertexIdx.size(); ++j) {
-        if ((vertexIdx[i] - vertexIdx[j]).sumAbs() == 1) {
-          edgeIdx.push_back({i, j});
-          edgeStarts.push_back(projectedVertices[i]);
-          edgeEnds.push_back(projectedVertices[j]);
-        }
-      }
+    for (int i = 0; i < edgeIdx.size(); ++i) {
+      // edgeStarts[i] = projectedVertices[edgeIdx[i].first];
+      // edgeEnds[i] = projectedVertices[edgeIdx[i].second];
     }
   }
 
@@ -242,8 +238,6 @@ template <int N> struct Lattice : AbstractLattice {
   virtual int getVertexNum() { return projectedVertices.size(); }
   virtual int getEdgeNum() { return edgeStarts.size(); }
 
-  virtual void setAxis(std::vector<int> &newAxis) { viewAxis = newAxis; }
-
   // Vec<N - 1, float> stereographicProjection(Vec<N, float>& point) {
   //   Vec<N - 1, float> newPoint;
   //   for (int i = 0; i < N - 1; ++i) {
@@ -252,45 +246,48 @@ template <int N> struct Lattice : AbstractLattice {
   //   return newPoint;
   // }
 
+  // Vec3f stereographic(Vec<N, float> &point) {
+  //   if (N < 4) {
+  //     Vec3f newPoint;
+  //     for (int i = 0; i < 2; ++i) {
+  //       newPoint[i] = point[i] / (4.f - point[2]);
+  //     }
+  //     newPoint[2] = 0.f;
+  //     return newPoint;
+  //   }
+
+  //  Vec4f newPoint4;
+  //  if (N > 5) {
+  //    std::cerr << "ERROR: Higher than 5D" << std::endl;
+  //    return Vec3f{0};
+  //  } else if (N == 5) {
+  //    for (int i = 0; i < 4; ++i) {
+  //      newPoint4[i] = point[i] / (4.f - point[4]);
+  //    }
+  //  } else if (N == 4) {
+  //    newPoint4 = point;
+  //  }
+
+  //  Vec3f newPoint;
+  //  for (int i = 0; i < 3; ++i) {
+  //    newPoint[i] = newPoint4[i] / (4.f - newPoint4[3]);
+  //  }
+
+  //  return newPoint;
+  //}
+
   inline Vec3f project(Vec<N, float> &point) {
     return Vec3f{point[0], point[1], point[2]};
   }
 
-  Vec3f stereographic(Vec<N, float> &point) {
-    if (N < 4) {
-      Vec3f newPoint;
-      for (int i = 0; i < 2; ++i) {
-        newPoint[i] = point[i] / (4.f - point[2]);
-      }
-      newPoint[2] = 0.f;
-      return newPoint;
-    }
-
-    Vec4f newPoint4;
-    if (N > 5) {
-      std::cerr << "ERROR: Higher than 5D" << std::endl;
-      return Vec3f{0};
-    } else if (N == 5) {
-      for (int i = 0; i < 4; ++i) {
-        newPoint4[i] = point[i] / (4.f - point[4]);
-      }
-    } else if (N == 4) {
-      newPoint4 = point;
-    }
-
-    Vec3f newPoint;
-    for (int i = 0; i < 3; ++i) {
-      newPoint[i] = newPoint4[i] / (4.f - newPoint4[3]);
-    }
-
-    return newPoint;
-  }
-
-  virtual void updateBuffer(BufferObject &buffer) {
+  virtual void updateBuffer(BufferObject &buffer, BufferObject &colorBuffer) {
     if (dirty) {
       buffer.bind();
       buffer.data(projectedVertices.size() * 3 * sizeof(float),
                   projectedVertices.data());
+
+      colorBuffer.bind();
+      colorBuffer.data(4 * sizeof(float), &dummyColor);
       dirty = false;
     }
   }
