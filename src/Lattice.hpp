@@ -77,8 +77,6 @@ struct AbstractLattice {
 
 template <int N> struct Lattice : AbstractLattice {
   std::array<Vec<N, float>, N> basis;
-  std::vector<Vec<N, float>> extraPoints;
-
   std::vector<Vec<N, float>> unitCell;
 
   std::vector<Vec<N, int>> vertexIdx;
@@ -163,18 +161,18 @@ template <int N> struct Lattice : AbstractLattice {
     vertices.resize(vertexIdx.size());
     projectedVertices.resize(vertexIdx.size());
 
-    // edgeIdx.clear();
+    edgeIdx.clear();
 
-    // for (int i = 0; i < vertexIdx.size() - 1; ++i) {
-    //   for (int j = i + 1; j < vertexIdx.size(); ++j) {
-    //     if ((vertexIdx[i] - vertexIdx[j]).sumAbs() == 1) {
-    //       edgeIdx.push_back({i, j});
-    //     }
-    //   }
-    // }
+    for (int i = 0; i < vertexIdx.size() - 1; ++i) {
+      for (int j = i + 1; j < vertexIdx.size(); ++j) {
+        if ((vertexIdx[i] - vertexIdx[j]).sumAbs() == 1) {
+          edgeIdx.push_back({i, j});
+        }
+      }
+    }
 
-    // edgeStarts.resize(edgeIdx.size());
-    // edgeEnds.resize(edgeIdx.size());
+    edgeStarts.resize(edgeIdx.size());
+    edgeEnds.resize(edgeIdx.size());
 
     update();
   }
@@ -201,8 +199,8 @@ template <int N> struct Lattice : AbstractLattice {
     dirtyEdges = true;
 
     for (int i = 0; i < edgeIdx.size(); ++i) {
-      // edgeStarts[i] = projectedVertices[edgeIdx[i].first];
-      // edgeEnds[i] = projectedVertices[edgeIdx[i].second];
+      edgeStarts[i] = projectedVertices[edgeIdx[i].first];
+      edgeEnds[i] = projectedVertices[edgeIdx[i].second];
     }
   }
 

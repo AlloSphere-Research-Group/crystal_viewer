@@ -61,7 +61,7 @@ uniform vec3 boxMax;
 
 layout (location = 0) in vec3 position;
 layout (location = 1) in vec3 offset;
-//layout (location = 2) in vec4 colors;
+layout (location = 2) in vec4 colors;
 
 out vec4 colorCode;
 
@@ -75,8 +75,8 @@ void main()
   vec4 p = vec4(scale * position + offset, 1.0);
   gl_Position = al_ProjectionMatrix * al_ModelViewMatrix * p;
   
-  colorCode = color;
-  //colorCode = useColorCode * colors + (1 - useColorCode) * color;
+  //colorCode = color;
+  colorCode = useColorCode * colors + (1 - useColorCode) * color;
   float ib = insideBox(offset);
   colorCode.a = 0.05 + 0.95 * ib;
   // we also have access to index of instance,
@@ -453,20 +453,20 @@ public:
 
     g.pushMatrix();
 
-    if (showLattice.get()) {
-      if (enableLatticeEdge.get()) {
-        drawLatticeEdges(g);
-      }
-      drawLattice(g);
-    }
+    // if (showLattice.get()) {
+    //   if (enableLatticeEdge.get()) {
+    //     drawLatticeEdges(g);
+    //   }
+    //   drawLattice(g);
+    // }
 
-    if (showSlicePlane.get()) {
-      drawBox(g);
-    }
+    // if (showSlicePlane.get()) {
+    //   drawBox(g);
+    // }
 
     if (showSlice.get()) {
       if (enableSliceEdge.get()) {
-        drawSliceEdges(g);
+        // drawSliceEdges(g);
       }
       drawSlice(g);
     }
@@ -508,8 +508,8 @@ public:
   }
 
   void drawSlice(Graphics &g) {
-    g.color(slicePlaneColor.get());
-    slice->drawPlane(g);
+    // g.color(slicePlaneColor.get());
+    // slice->drawPlane(g);
 
     slice->updateVertexBuffer(sliceVertices, sliceColors);
 
@@ -800,7 +800,7 @@ private:
   ParameterInt sliceDim{"sliceDim", "", 2, 2, 2};
   Parameter sliceDepth{"sliceDepth", "", 0, 0, 10.f};
 
-  ParameterBool recomputeEdges{"recomputeEdges", ""};
+  ParameterBool recomputeEdges{"recomputeEdges", "", 1.f};
   Parameter edgeThreshold{"edgeThreshold", "", 1.1f, 0.f, 2.f};
 
   ParameterInt millerNum{"millerNum", "", 0, 0, 0};

@@ -39,8 +39,6 @@
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
 
-static const int NUM_PICKABLES = 1024;
-
 struct AbstractSlice {
   virtual float getMiller(int millerNum, unsigned int index) = 0;
   virtual void setMiller(float value, int millerNum, unsigned int index) = 0;
@@ -72,7 +70,7 @@ struct AbstractSlice {
   int sliceDim;
 
   bool enableEdges{false};
-  bool recomputeEdges{false};
+  bool recomputeEdges{true};
   bool dirty{false};
   bool dirtyEdges{false};
   bool busy{false};
@@ -154,11 +152,6 @@ template <int N, int M> struct Slice : AbstractSlice {
 
     addWireBox(box, 0.1f);
     box.update();
-    pickables.resize(NUM_PICKABLES);
-    for (auto &p : pickables) {
-      p.set(box);
-      pickableManager << p;
-    }
 
     updateWindow();
     update();
@@ -274,6 +267,10 @@ template <int N, int M> struct Slice : AbstractSlice {
     planeVertices.clear();
     boxVertices.clear();
     subspaceVertices.clear();
+    pickableManager.clear();
+    pickables.clear();
+    unitCell.clear();
+    unitCellMesh.reset();
 
     int index = 0;
     for (int i = 0; i < lattice->vertexIdx.size(); ++i) {
@@ -283,26 +280,34 @@ template <int N, int M> struct Slice : AbstractSlice {
         for (int j = 0; j < N - M; ++j) {
           projVertex -= dist[j] * normal[j];
         }
+        for (auto &sv : subspaceVertices) {
+          Vec3f projv = project(projVertex) - sv;
+          if (projv.sumAbs() < 1E-4)
+            continue;
+          // std::cout << projv.sumAbs() << std::endl;
+        }
 
         planeVertices.push_back(projVertex);
 
         subspaceVertices.emplace_back(project(projVertex));
-
+        pickables.emplace_back(std::to_string(index));
+        pickables.back().set(box);
+        pickables.back().pose.setPos(subspaceVertices.back());
         boxVertices.push_back({i, index});
         index++;
       }
     }
 
-    updateEdges();
-
-    for (int i = 0; i < NUM_PICKABLES && i < subspaceVertices.size(); ++i) {
-      pickableManager.pickables()[i]->pose = Pose(subspaceVertices[i], Quatf());
+    for (auto &p : pickables) {
+      pickableManager << p;
     }
+
+    updateEdges();
   }
 
   virtual void updateEdges() {
-    if (!enableEdges)
-      return;
+    // if (!enableEdges)
+    //   return;
 
     dirtyEdges = true;
     edgeStarts.clear();
@@ -362,10 +367,10 @@ template <int N, int M> struct Slice : AbstractSlice {
       vertexBuffer.data(subspaceVertices.size() * 3 * sizeof(float),
                         subspaceVertices.data());
 
-      if (recomputeEdges) {
-        colorBuffer.bind();
-        colorBuffer.data(colors.size() * 4 * sizeof(float), colors.data());
-      }
+      // if (recomputeEdges) {
+      colorBuffer.bind();
+      colorBuffer.data(colors.size() * 4 * sizeof(float), colors.data());
+      //}
 
       dirty = false;
     }
@@ -386,48 +391,47 @@ template <int N, int M> struct Slice : AbstractSlice {
   }
 
   virtual void updatePickables() {
-    for (int i = 0; i < NUM_PICKABLES && i < subspaceVertices.size(); ++i) {
-      auto *pickable = pickableManager.pickables()[i];
-      if (pickable->selected.get() && pickable->hover.get()) {
+    for (auto &pickable : pickables) {
+      if (pickable.selected.get() && pickable.hover.get()) {
         bool hasPoint = false;
         for (std::vector<Vec3f>::iterator it = unitCell.begin();
              it != unitCell.end();) {
-          if (*it == pickable->pose.get().pos()) {
+          if (*it == pickable.pose.get().pos()) {
             hasPoint = true;
             it = unitCell.erase(it);
-            pickable->selected = false;
+            pickable.selected = false;
           } else {
             it++;
           }
         }
         if (!hasPoint && unitCell.size() <= M) {
-          unitCell.push_back(pickable->pose.get().pos());
+          unitCell.push_back(pickable.pose.get().pos());
 
           if (unitCell.size() == M + 1) {
             Vec3f origin = unitCell[0];
             std::array<Vec3f, M> unitBasis;
             Vec3f endCorner = origin;
-            for (int j = 0; j < M; ++j) {
-              unitBasis[j] = unitCell[j + 1] - origin;
-              endCorner += unitBasis[j];
+            for (int i = 0; i < M; ++i) {
+              unitBasis[i] = unitCell[i + 1] - origin;
+              endCorner += unitBasis[i];
             }
 
             unitCellMesh.reset();
             unitCellMesh.primitive(Mesh::LINES);
 
-            for (int j = 0; j < M; ++j) {
+            for (int i = 0; i < M; ++i) {
               unitCellMesh.vertex(origin);
-              unitCellMesh.vertex(unitCell[j + 1]);
+              unitCellMesh.vertex(unitCell[i + 1]);
               if (M == 2) {
-                unitCellMesh.vertex(unitCell[j + 1]);
+                unitCellMesh.vertex(unitCell[i + 1]);
                 unitCellMesh.vertex(endCorner);
               } else if (M == 3) {
                 for (int k = 0; k < M; ++k) {
-                  if (k != j) {
-                    unitCellMesh.vertex(unitCell[j + 1]);
-                    unitCellMesh.vertex(unitCell[j + 1] + unitBasis[k]);
+                  if (k != i) {
+                    unitCellMesh.vertex(unitCell[i + 1]);
+                    unitCellMesh.vertex(unitCell[i + 1] + unitBasis[k]);
 
-                    unitCellMesh.vertex(unitCell[j + 1] + unitBasis[k]);
+                    unitCellMesh.vertex(unitCell[i + 1] + unitBasis[k]);
                     unitCellMesh.vertex(endCorner);
                   }
                 }
@@ -435,9 +439,6 @@ template <int N, int M> struct Slice : AbstractSlice {
             }
 
             unitCellMesh.update();
-
-            // for (int j = 0; j < subspaceVertices.size(); ++j) {
-            // }
           }
         }
 
@@ -447,13 +448,9 @@ template <int N, int M> struct Slice : AbstractSlice {
   }
 
   virtual void drawPickable(Graphics &g) {
-    for (int i = 0; i < NUM_PICKABLES && i < subspaceVertices.size(); ++i) {
-      auto pickable = pickableManager.pickables()[i];
+    for (auto &pickable : pickables) {
       g.color(1, 1, 1);
-      pickable->draw(g, [&](Pickable &p) {
-        auto &b = dynamic_cast<PickableBB &>(p);
-        b.drawBB(g);
-      });
+      pickable.drawBB(g);
     }
 
     g.color(1, 1, 0);
