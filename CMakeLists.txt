@@ -1,16 +1,16 @@
 cmake_minimum_required(VERSION 3.0)
 
-project(crystal)
+project(crystal-viewer)
 
 # name of application. replace 'app' with desired app name
-set(APP_NAME app)
+set(APP_NAME crystal-viewer)
 
 # path to main source file
 add_executable(${APP_NAME}
   src/main.cpp
+  src/CrystalViewer.hpp
   src/Lattice.hpp
   src/Slice.hpp
-  src/CrystalViewer.hpp
 )
 
 # add allolib as a subdirectory to the project

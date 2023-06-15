@@ -8,26 +8,6 @@ Crystal Viewer currently requires:
  * git
  * cmake version 3.0 or higher
 
-## Using `alloinit`
-The [`alloinit`](utils/alloinit.md) one-step project initializer can be used to
-initialize a new alloinit project as follows:
-
-```sh
-curl -L https://github.com/Allosphere-Research-Group/allotemplate/raw/master/utils/alloinit \
-    | bash -s proj  # Download `alloinit` and initialize an `allotemplate` project in `proj/`.
-cd proj             # A copy of `alloinit` is now in `proj/utils`.
-./run.sh            # Run your new project!
-```
-
-## Manually creating a new project based on allotemplate
-On a bash shell:
-
-    git clone https://github.com/AlloSphere-Research-Group/allotemplate.git <project folder name>
-    cd <project folder name>
-    ./init.sh
-
-This will prepare the project as a fresh git repository and will add allolib and al_ext as submodules.
-
 ## How to compile / run
 The src/ folder contains the initial main.cpp starter code.
 
@@ -48,3 +28,18 @@ If you need to delete the build,
     ./distclean.sh
 
 should recursively clean all the build directories of the project including those of allolib and its submodules.
+
+## Copyright
+Copyright 2023 AlloSphere Research Group
+
+Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+
+  1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+
+  2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+
+  3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Author: Kon Hyong Kim

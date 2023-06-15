@@ -1,9 +1,7 @@
 #include <iostream>
-#include <memory>
-#include <vector>
 
 #include "al/app/al_DistributedApp.hpp"
-#include "al/ui/al_ParameterGUI.hpp"
+#include "al/io/al_Imgui.hpp"
 
 #include "CrystalViewer.hpp"
 
@@ -20,8 +18,13 @@ struct CrystalApp : DistributedAppWithState<State> {
     lens().near(0.1).far(100).fovy(45);
     nav().pos(0, 0, 4);
 
-    if (!viewer.init(parameterServer())) {
+    if (!viewer.init()) {
       std::cerr << "Crystal viewer failed to initialize" << std::endl;
+      quit();
+    }
+
+    if (!viewer.registerCallbacks(parameterServer())) {
+      std::cerr << "Error setting up parameters" << std::endl;
       quit();
     }
 
@@ -38,10 +41,16 @@ struct CrystalApp : DistributedAppWithState<State> {
 
       imguiEndFrame();
     }
+
     if (isPrimary()) {
       state().pose = nav();
     } else {
       nav().set(state().pose);
+    }
+
+    if (viewer.watchCheck()) {
+      std::cout << "shaders changed" << std::endl;
+      viewer.reloadShaders();
     }
   }
 
@@ -56,15 +65,13 @@ struct CrystalApp : DistributedAppWithState<State> {
   }
 
   bool onMouseMove(const Mouse &m) override {
-    viewer.getSlice()->pickableManager.onMouseMove(graphics(), m, width(),
-                                                   height());
+    viewer.slice->pickableManager.onMouseMove(graphics(), m, width(), height());
     return true;
   }
 
   bool onMouseDown(const Mouse &m) override {
-    viewer.getSlice()->pickableManager.onMouseDown(graphics(), m, width(),
-                                                   height());
-    viewer.getSlice()->updatePickables();
+    viewer.slice->pickableManager.onMouseDown(graphics(), m, width(), height());
+    viewer.slice->updatePickables();
     return true;
   }
 
@@ -75,8 +82,7 @@ struct CrystalApp : DistributedAppWithState<State> {
   }*/
 
   bool onMouseUp(const Mouse &m) override {
-    viewer.getSlice()->pickableManager.onMouseUp(graphics(), m, width(),
-                                                 height());
+    viewer.slice->pickableManager.onMouseUp(graphics(), m, width(), height());
     return true;
   }
 

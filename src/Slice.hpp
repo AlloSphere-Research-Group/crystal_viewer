@@ -1,36 +1,5 @@
 #ifndef SLICE_HPP
 #define SLICE_HPP
-/*
- * Copyright 2023 AlloSphere Research Group
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- *   1. Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- *   2. Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *
- *   3. Neither the name of the copyright holder nor the names of its
- * contributors may be used to endorse or promote products derived from this
- * software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
- * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Author: Kon Hyong Kim
- */
 
 #include "Lattice.hpp"
 #include "al/math/al_Random.hpp"
@@ -40,28 +9,29 @@
 using json = nlohmann::json;
 
 struct AbstractSlice {
-  virtual float getMiller(int millerNum, unsigned int index) = 0;
-  virtual void setMiller(float value, int millerNum, unsigned int index) = 0;
-  virtual void roundMiller() = 0;
-
-  virtual int getVertexNum() = 0;
-  virtual int getEdgeNum() = 0;
-
-  virtual void setWindow(float newWindowSize, float newWindowDepth) = 0;
-
   virtual void update() = 0;
   virtual void updateEdges() = 0;
   virtual void updatePickables() = 0;
 
-  virtual void updateVertexBuffer(BufferObject &vertexbuffer,
-                                  BufferObject &colorBuffer) = 0;
-  virtual void updateEdgeBuffers(BufferObject &startBuffer,
-                                 BufferObject &endBuffer) = 0;
+  virtual float getMiller(int millerNum, unsigned int index) = 0;
+  virtual void setMiller(float value, int millerNum, unsigned int index) = 0;
+  virtual void roundMiller() = 0;
+
+  // split to depth and window setting later
+  virtual void setWindow(float newWindowSize, float newWindowDepth) = 0;
+
+  virtual int getVertexNum() = 0;
+  virtual int getEdgeNum() = 0;
+
+  virtual void uploadVertices(BufferObject &vertexbuffer,
+                              BufferObject &colorBuffer) = 0;
+  virtual void uploadEdges(BufferObject &startBuffer,
+                           BufferObject &endBuffer) = 0;
 
   virtual void drawPickable(Graphics &g) = 0;
-  virtual void drawPlane(Graphics &g) = 0;
-  virtual void drawBox(Graphics &g) = 0;
-  virtual void drawBoxNodes(Graphics &g, VAOMesh &mesh) = 0;
+  // virtual void drawPlane(Graphics &g) = 0;
+  // virtual void drawBox(Graphics &g) = 0;
+  // virtual void drawBoxNodes(Graphics &g, VAOMesh &mesh) = 0;
 
   virtual void exportToTxt(std::string &filePath) = 0;
   virtual void exportToJson(std::string &filePath) = 0;
@@ -69,11 +39,8 @@ struct AbstractSlice {
   int latticeDim;
   int sliceDim;
 
-  bool enableEdges{false};
-  bool recomputeEdges{true};
   bool dirty{false};
   bool dirtyEdges{false};
-  bool busy{false};
 
   float edgeThreshold{1.1f};
   float windowSize{0.f};
@@ -84,10 +51,27 @@ struct AbstractSlice {
 };
 
 template <int N, int M> struct Slice : AbstractSlice {
+  struct CrystalNode {
+    int id;
+    Vec3f pos;
+    int overlap;
+    PickableBB pickable;
+
+    std::vector<std::pair<int, Vec3f>> neighbours;
+
+    void addNeighbour(CrystalNode neighbourNode) {
+      Vec3f dist = neighbourNode.pos - pos;
+      neighbours.push_back({neighbourNode.id, dist});
+    }
+  };
+
   Lattice<N> *lattice;
+
+  std::vector<CrystalNode> nodes;
 
   std::vector<Vec<N, float>> millerIdx;
   std::vector<Vec<N, float>> normal;
+
   std::vector<Vec<N, float>> sliceBasis;
 
   std::vector<Vec<N, float>> planeVertices;
@@ -96,7 +80,7 @@ template <int N, int M> struct Slice : AbstractSlice {
   std::vector<Color> colors;
   std::vector<Vec3f> edgeStarts;
   std::vector<Vec3f> edgeEnds;
-  std::vector<PickableBB> pickables;
+
   std::vector<Vec3f> unitCell;
 
   std::vector<std::pair<unsigned int, unsigned int>> boxVertices;
@@ -130,8 +114,6 @@ template <int N, int M> struct Slice : AbstractSlice {
         millerIdx[i][i] = 1.f;
       }
     } else {
-      enableEdges = oldSlice->enableEdges;
-      recomputeEdges = oldSlice->recomputeEdges;
       edgeThreshold = oldSlice->edgeThreshold;
       windowSize = oldSlice->windowSize;
       windowDepth = oldSlice->windowDepth;
@@ -157,9 +139,271 @@ template <int N, int M> struct Slice : AbstractSlice {
     update();
   }
 
-  virtual float getMiller(int millerNum, unsigned int index) {
-    return millerIdx[millerNum][index];
+  virtual void update() {
+    dirty = true;
+
+    computeNormal();
+
+    planeVertices.clear();
+    boxVertices.clear();
+    subspaceVertices.clear();
+    pickableManager.clear();
+    unitCell.clear();
+    unitCellMesh.reset();
+
+    nodes.clear();
+
+    int index = 0;
+
+    for (int i = 0; i < lattice->vertices.size(); ++i) {
+      Vec<N, float> &vertex = lattice->vertices[i];
+
+      Vec<N - M, float> dist = distanceToPlane(vertex);
+
+      if (dist.mag() < windowDepth) {
+        CrystalNode newNode;
+        Vec<N, float> projVertex = vertex;
+
+        for (int j = 0; j < N - M; ++j) {
+          projVertex -= dist[j] * normal[j];
+        }
+
+        bool skip = false;
+        for (auto &sv : subspaceVertices) {
+          Vec3f projv = project(projVertex) - sv;
+          if (projv.sumAbs() < 1E-4) {
+            skip = true;
+            break;
+          }
+          // std::cout << projv.sumAbs() << std::endl;
+        }
+
+        if (skip) {
+          continue;
+        }
+
+        // TODO: initialize with name
+        //  pickables.emplace_back(std::to_string(index));
+        newNode.id = nodes.size();
+        newNode.pos = project(projVertex);
+        newNode.pickable.set(box);
+        newNode.pickable.pose.setPos(newNode.pos);
+        nodes.push_back(newNode);
+
+        planeVertices.push_back(projVertex);
+
+        subspaceVertices.emplace_back(project(projVertex));
+
+        index++;
+      }
+    }
+
+    for (auto &cn : nodes) {
+      pickableManager << cn.pickable;
+    }
+
+    updateEdges();
   }
+
+  virtual void updateEdges() {
+    dirtyEdges = true;
+    edgeStarts.clear();
+    edgeEnds.clear();
+
+    colors.clear();
+    connectivity.resize(subspaceVertices.size());
+    for (auto &c : connectivity) {
+      c = 0;
+    }
+
+    for (int i = 0; i < nodes.size(); ++i) {
+      for (int j = 0; j < i - 1; ++j) {
+        Vec3f v = nodes[i].pos - nodes[j].pos;
+        if (v.sumAbs() < 1E-4) {
+          std::cout << nodes[i].pos << " - " << nodes[j].pos << std::endl;
+        }
+      }
+    }
+
+    for (int i = 0; i < nodes.size(); ++i) {
+      for (int j = i + 1; j < nodes.size(); ++j) {
+        Vec3f dist = nodes[i].pos - nodes[j].pos;
+        if (dist.mag() < edgeThreshold) {
+          nodes[i].addNeighbour(nodes[j]);
+          nodes[j].addNeighbour(nodes[i]);
+          edgeStarts.push_back(nodes[i].pos);
+          edgeEnds.push_back(nodes[j].pos);
+        }
+      }
+      HSV hsv(nodes[i].neighbours.size() / 8.f);
+      hsv.wrapHue();
+      colors.emplace_back(hsv);
+    }
+
+    // for (int i = 0; i < subspaceVertices.size(); ++i) {
+    //   float maxDist = 0;
+
+    //   for (int j = i + 1; j < subspaceVertices.size(); ++j) {
+    //     Vec3f dist = subspaceVertices[i] - subspaceVertices[j];
+    //     if (dist.mag() < edgeThreshold) {
+    //       edgeStarts.push_back(subspaceVertices[i]);
+    //       edgeEnds.push_back(subspaceVertices[j]);
+    //       maxDist = maxDist < dist.mag() ? dist.mag() : maxDist;
+    //       connectivity[i] += 1;
+    //       connectivity[j] += 1;
+    //     }
+    //   }
+    //   // HSV hsv(maxDist);
+    //   HSV hsv(connectivity[i] / 4.f);
+    //   hsv.wrapHue();
+    //   colors.emplace_back(hsv);
+    // }
+  }
+
+  virtual void uploadVertices(BufferObject &vertexBuffer,
+                              BufferObject &colorBuffer) {
+    if (dirty) {
+      vertexBuffer.bind();
+      vertexBuffer.data(subspaceVertices.size() * 3 * sizeof(float),
+                        subspaceVertices.data());
+
+      colorBuffer.bind();
+      colorBuffer.data(colors.size() * 4 * sizeof(float), colors.data());
+
+      dirty = false;
+    }
+  }
+
+  virtual void uploadEdges(BufferObject &startBuffer, BufferObject &endBuffer) {
+    if (dirtyEdges) {
+      startBuffer.bind();
+      startBuffer.data(edgeStarts.size() * 3 * sizeof(float),
+                       edgeStarts.data());
+
+      endBuffer.bind();
+      endBuffer.data(edgeEnds.size() * 3 * sizeof(float), edgeEnds.data());
+
+      dirtyEdges = false;
+    }
+  }
+
+  virtual void updatePickables() {
+    for (auto &cn : nodes) {
+      auto &pickable = cn.pickable;
+      if (pickable.selected.get() && pickable.hover.get()) {
+        std::cout << "Node: " << cn.id << std::endl;
+        std::cout << " neighbours: " << cn.neighbours.size() << std::endl;
+        for (auto &n : cn.neighbours) {
+          std::cout << "  " << n.first << ": " << n.second << std::endl;
+        }
+        bool hasPoint = false;
+        for (std::vector<Vec3f>::iterator it = unitCell.begin();
+             it != unitCell.end();) {
+          if (*it == pickable.pose.get().pos()) {
+            hasPoint = true;
+            it = unitCell.erase(it);
+            pickable.selected = false;
+          } else {
+            it++;
+          }
+        }
+        if (!hasPoint && unitCell.size() <= M) {
+          unitCell.push_back(pickable.pose.get().pos());
+
+          if (unitCell.size() == M + 1) {
+            Vec3f origin = unitCell[0];
+            std::array<Vec3f, M> unitBasis;
+            Vec3f endCorner = origin;
+            for (int i = 0; i < M; ++i) {
+              unitBasis[i] = unitCell[i + 1] - origin;
+              endCorner += unitBasis[i];
+            }
+
+            unitCellMesh.reset();
+            unitCellMesh.primitive(Mesh::LINES);
+
+            for (int i = 0; i < M; ++i) {
+              unitCellMesh.vertex(origin);
+              unitCellMesh.vertex(unitCell[i + 1]);
+              if (M == 2) {
+                unitCellMesh.vertex(unitCell[i + 1]);
+                unitCellMesh.vertex(endCorner);
+              } else if (M == 3) {
+                for (int k = 0; k < M; ++k) {
+                  if (k != i) {
+                    unitCellMesh.vertex(unitCell[i + 1]);
+                    unitCellMesh.vertex(unitCell[i + 1] + unitBasis[k]);
+
+                    unitCellMesh.vertex(unitCell[i + 1] + unitBasis[k]);
+                    unitCellMesh.vertex(endCorner);
+                  }
+                }
+              }
+            }
+
+            unitCellMesh.update();
+          }
+        }
+
+        break;
+      }
+    }
+  }
+
+  virtual void drawPickable(Graphics &g) {
+    for (auto &cn : nodes) {
+      auto &pickable = cn.pickable;
+      g.color(1, 1, 1);
+      pickable.drawBB(g);
+    }
+
+    g.color(1, 1, 0);
+    for (auto &u : unitCell) {
+      g.pushMatrix();
+      g.translate(u);
+      g.draw(box);
+      g.popMatrix();
+    }
+
+    g.draw(unitCellMesh);
+  }
+
+  // virtual void drawPlane(Graphics &g) {
+  //   g.pushMatrix();
+  //   // TODO: calculate bivector
+  //   Quatf rot = Quatf::getRotationTo(
+  //       Vec3f(0.f, 0.f, 1.f), Vec3f(normal[0][0], normal[0][1],
+  //       normal[0][2]));
+  //   g.rotate(rot);
+  //   g.draw(slicePlane);
+  //   g.popMatrix();
+  // }
+
+  // virtual void drawBox(Graphics &g) {
+  //   g.pushMatrix();
+  //   // TODO: calculate bivector
+  //   Quatf rot = Quatf::getRotationTo(
+  //       Vec3f(0.f, 0.f, 1.f), Vec3f(normal[0][0], normal[0][1],
+  //       normal[0][2]));
+  //   g.rotate(rot);
+  //   g.draw(sliceBox);
+  //   g.popMatrix();
+  // }
+
+  // virtual void drawBoxNodes(Graphics &g, VAOMesh &mesh) {
+  //   for (auto &bv : boxVertices) {
+  //     g.pushMatrix();
+  //     // TODO: consider projection
+  //     // g.translate(lattice->vertices[bv.first][0],
+  //     //            lattice->vertices[bv.first][1],
+  //     //            lattice->vertices[bv.first][2]);
+  //     g.scale(0.04f);
+  //     g.draw(mesh);
+  //     g.popMatrix();
+  //   }
+
+  //  g.draw(boxEdges);
+  //}
 
   virtual void setMiller(float value, int millerNum, unsigned int index) {
     if (millerNum >= N - M || index >= N) {
@@ -182,8 +426,9 @@ template <int N, int M> struct Slice : AbstractSlice {
     update();
   }
 
-  virtual int getVertexNum() { return subspaceVertices.size(); }
-  virtual int getEdgeNum() { return edgeStarts.size(); }
+  virtual float getMiller(int millerNum, unsigned int index) {
+    return millerIdx[millerNum][index];
+  }
 
   virtual void setWindow(float newWindowSize, float newWindowDepth) {
     windowSize = newWindowSize;
@@ -259,245 +504,8 @@ template <int N, int M> struct Slice : AbstractSlice {
     }
   }
 
-  virtual void update() {
-    dirty = true;
-
-    computeNormal();
-
-    planeVertices.clear();
-    boxVertices.clear();
-    subspaceVertices.clear();
-    pickableManager.clear();
-    pickables.clear();
-    unitCell.clear();
-    unitCellMesh.reset();
-
-    int index = 0;
-    for (int i = 0; i < lattice->vertexIdx.size(); ++i) {
-      Vec<N - M, float> dist = distanceToPlane(lattice->vertices[i]);
-      if (dist.mag() < windowDepth) {
-        Vec<N, float> projVertex = lattice->vertices[i];
-        for (int j = 0; j < N - M; ++j) {
-          projVertex -= dist[j] * normal[j];
-        }
-        for (auto &sv : subspaceVertices) {
-          Vec3f projv = project(projVertex) - sv;
-          if (projv.sumAbs() < 1E-4)
-            continue;
-          // std::cout << projv.sumAbs() << std::endl;
-        }
-
-        planeVertices.push_back(projVertex);
-
-        subspaceVertices.emplace_back(project(projVertex));
-        pickables.emplace_back(std::to_string(index));
-        pickables.back().set(box);
-        pickables.back().pose.setPos(subspaceVertices.back());
-        boxVertices.push_back({i, index});
-        index++;
-      }
-    }
-
-    for (auto &p : pickables) {
-      pickableManager << p;
-    }
-
-    updateEdges();
-  }
-
-  virtual void updateEdges() {
-    // if (!enableEdges)
-    //   return;
-
-    dirtyEdges = true;
-    edgeStarts.clear();
-    edgeEnds.clear();
-
-    if (recomputeEdges) {
-      colors.clear();
-      connectivity.resize(subspaceVertices.size());
-      for (auto &c : connectivity) {
-        c = 0;
-      }
-
-      for (int i = 0; i < subspaceVertices.size(); ++i) {
-        float maxDist = 0;
-
-        for (int j = i + 1; j < subspaceVertices.size(); ++j) {
-          Vec3f dist = subspaceVertices[i] - subspaceVertices[j];
-          if (dist.mag() < edgeThreshold) {
-            edgeStarts.push_back(subspaceVertices[i]);
-            edgeEnds.push_back(subspaceVertices[j]);
-            maxDist = maxDist < dist.mag() ? dist.mag() : maxDist;
-            connectivity[i] += 1;
-            connectivity[j] += 1;
-          }
-        }
-        // HSV hsv(maxDist);
-        HSV hsv(connectivity[i] / 4.f);
-        hsv.wrapHue();
-        colors.emplace_back(hsv);
-      }
-    } else {
-      for (auto &e : lattice->edgeIdx) {
-        auto it1 = std::find_if(
-            boxVertices.begin(), boxVertices.end(),
-            [&e](const std::pair<unsigned int, unsigned int> &element) {
-              return element.first == e.first;
-            });
-        if (it1 != boxVertices.end()) {
-          auto it2 = std::find_if(
-              boxVertices.begin(), boxVertices.end(),
-              [&e](const std::pair<unsigned int, unsigned int> &element) {
-                return element.first == e.second;
-              });
-          if (it2 != boxVertices.end()) {
-            edgeStarts.push_back(subspaceVertices[it1->second]);
-            edgeEnds.push_back(subspaceVertices[it2->second]);
-          }
-        }
-      }
-    }
-  }
-
-  virtual void updateVertexBuffer(BufferObject &vertexBuffer,
-                                  BufferObject &colorBuffer) {
-    if (dirty) {
-      vertexBuffer.bind();
-      vertexBuffer.data(subspaceVertices.size() * 3 * sizeof(float),
-                        subspaceVertices.data());
-
-      // if (recomputeEdges) {
-      colorBuffer.bind();
-      colorBuffer.data(colors.size() * 4 * sizeof(float), colors.data());
-      //}
-
-      dirty = false;
-    }
-  }
-
-  virtual void updateEdgeBuffers(BufferObject &startBuffer,
-                                 BufferObject &endBuffer) {
-    if (dirtyEdges) {
-      startBuffer.bind();
-      startBuffer.data(edgeStarts.size() * 3 * sizeof(float),
-                       edgeStarts.data());
-
-      endBuffer.bind();
-      endBuffer.data(edgeEnds.size() * 3 * sizeof(float), edgeEnds.data());
-
-      dirtyEdges = false;
-    }
-  }
-
-  virtual void updatePickables() {
-    for (auto &pickable : pickables) {
-      if (pickable.selected.get() && pickable.hover.get()) {
-        bool hasPoint = false;
-        for (std::vector<Vec3f>::iterator it = unitCell.begin();
-             it != unitCell.end();) {
-          if (*it == pickable.pose.get().pos()) {
-            hasPoint = true;
-            it = unitCell.erase(it);
-            pickable.selected = false;
-          } else {
-            it++;
-          }
-        }
-        if (!hasPoint && unitCell.size() <= M) {
-          unitCell.push_back(pickable.pose.get().pos());
-
-          if (unitCell.size() == M + 1) {
-            Vec3f origin = unitCell[0];
-            std::array<Vec3f, M> unitBasis;
-            Vec3f endCorner = origin;
-            for (int i = 0; i < M; ++i) {
-              unitBasis[i] = unitCell[i + 1] - origin;
-              endCorner += unitBasis[i];
-            }
-
-            unitCellMesh.reset();
-            unitCellMesh.primitive(Mesh::LINES);
-
-            for (int i = 0; i < M; ++i) {
-              unitCellMesh.vertex(origin);
-              unitCellMesh.vertex(unitCell[i + 1]);
-              if (M == 2) {
-                unitCellMesh.vertex(unitCell[i + 1]);
-                unitCellMesh.vertex(endCorner);
-              } else if (M == 3) {
-                for (int k = 0; k < M; ++k) {
-                  if (k != i) {
-                    unitCellMesh.vertex(unitCell[i + 1]);
-                    unitCellMesh.vertex(unitCell[i + 1] + unitBasis[k]);
-
-                    unitCellMesh.vertex(unitCell[i + 1] + unitBasis[k]);
-                    unitCellMesh.vertex(endCorner);
-                  }
-                }
-              }
-            }
-
-            unitCellMesh.update();
-          }
-        }
-
-        break;
-      }
-    }
-  }
-
-  virtual void drawPickable(Graphics &g) {
-    for (auto &pickable : pickables) {
-      g.color(1, 1, 1);
-      pickable.drawBB(g);
-    }
-
-    g.color(1, 1, 0);
-    for (auto &u : unitCell) {
-      g.pushMatrix();
-      g.translate(u);
-      g.draw(box);
-      g.popMatrix();
-    }
-
-    g.draw(unitCellMesh);
-  }
-
-  virtual void drawPlane(Graphics &g) {
-    g.pushMatrix();
-    // TODO: calculate bivector
-    Quatf rot = Quatf::getRotationTo(
-        Vec3f(0.f, 0.f, 1.f), Vec3f(normal[0][0], normal[0][1], normal[0][2]));
-    g.rotate(rot);
-    g.draw(slicePlane);
-    g.popMatrix();
-  }
-
-  virtual void drawBox(Graphics &g) {
-    g.pushMatrix();
-    // TODO: calculate bivector
-    Quatf rot = Quatf::getRotationTo(
-        Vec3f(0.f, 0.f, 1.f), Vec3f(normal[0][0], normal[0][1], normal[0][2]));
-    g.rotate(rot);
-    g.draw(sliceBox);
-    g.popMatrix();
-  }
-
-  virtual void drawBoxNodes(Graphics &g, VAOMesh &mesh) {
-    for (auto &bv : boxVertices) {
-      g.pushMatrix();
-      // TODO: consider projection
-      g.translate(lattice->vertices[bv.first][0],
-                  lattice->vertices[bv.first][1],
-                  lattice->vertices[bv.first][2]);
-      g.scale(0.04f);
-      g.draw(mesh);
-      g.popMatrix();
-    }
-
-    g.draw(boxEdges);
-  }
+  virtual int getVertexNum() { return subspaceVertices.size(); }
+  virtual int getEdgeNum() { return edgeStarts.size(); }
 
   virtual void exportToTxt(std::string &filePath) {
     filePath += ".txt";
