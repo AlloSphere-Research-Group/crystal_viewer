@@ -29,19 +29,19 @@ struct AbstractLattice {
   virtual int getVertexNum() = 0;
   virtual int getEdgeNum() = 0;
 
-  virtual void uploadVertices(BufferObject &buffer,
+  virtual void uploadVertices(BufferObject &vertexBuffer,
                               BufferObject &colorBuffer) = 0;
   virtual void uploadEdges(BufferObject &startBuffer,
                            BufferObject &endBuffer) = 0;
 
-  int dim;
+  int latticeDim;
   int latticeSize;
 
   std::atomic<bool> dirty{false};
   std::atomic<bool> valid{false};
 
-  bool shouldUploadVertices{false};
-  bool shouldUploadEdges{false};
+  bool shouldUploadVertices{true};
+  bool shouldUploadEdges{true};
 };
 
 template <int N> struct Lattice : AbstractLattice {
@@ -59,7 +59,7 @@ template <int N> struct Lattice : AbstractLattice {
   std::mutex latticeLock;
 
   Lattice() {
-    dim = N;
+    latticeDim = N;
     latticeSize = 1;
 
     for (int i = 0; i < N; ++i) {
@@ -72,7 +72,7 @@ template <int N> struct Lattice : AbstractLattice {
   }
 
   Lattice(std::shared_ptr<AbstractLattice> oldLattice) {
-    dim = N;
+    latticeDim = N;
 
     if (oldLattice == nullptr) {
       latticeSize = 1;
@@ -84,10 +84,11 @@ template <int N> struct Lattice : AbstractLattice {
       }
     } else {
       latticeSize = oldLattice->latticeSize;
-      for (int i = 0; i < dim; ++i) {
+      for (int i = 0; i < latticeDim; ++i) {
         Vec<N, float> newVec(0);
-        if (i < oldLattice->dim) {
-          for (int j = 0; j < std::min(dim, oldLattice->dim); ++j) {
+        if (i < oldLattice->latticeDim) {
+          for (int j = 0; j < std::min(latticeDim, oldLattice->latticeDim);
+               ++j) {
             newVec[j] = oldLattice->getBasis(i, j);
           }
         } else {
@@ -102,13 +103,13 @@ template <int N> struct Lattice : AbstractLattice {
   }
 
   virtual void update() {
-    unitCell.resize((1 << dim) + additionalPoints.size());
+    unitCell.resize((1 << latticeDim) + additionalPoints.size());
     projectedVertices.resize(unitCell.size());
     colors.resize(unitCell.size());
 
-    for (int i = 0; i < (1 << dim); ++i) {
+    for (int i = 0; i < (1 << latticeDim); ++i) {
       Vec<N, float> newVec(0);
-      for (int j = 0; j < dim; ++j) {
+      for (int j = 0; j < latticeDim; ++j) {
         int hasBasis = (i % (1 << (j + 1))) / (1 << j);
         if (hasBasis > 0)
           newVec += basis[j];
@@ -122,20 +123,20 @@ template <int N> struct Lattice : AbstractLattice {
       std::cerr << "Error: Non-cubic cells not supported yet" << std::endl;
     }
 
-    edgeStarts.resize(dim * (1 << (dim - 1)));
-    edgeEnds.resize(dim * (1 << (dim - 1)));
+    edgeStarts.resize(latticeDim * (1 << (latticeDim - 1)));
+    edgeEnds.resize(latticeDim * (1 << (latticeDim - 1)));
 
     if (additionalPoints.size() > 0) {
       std::cerr << "Error: Non-cubic cells not supported yet" << std::endl;
     }
 
     int index = 0;
-    for (int i = 0; i < (1 << dim); ++i) {
-      for (int j = 0; j < dim; ++j) {
+    for (int i = 0; i < (1 << latticeDim); ++i) {
+      for (int j = 0; j < latticeDim; ++j) {
         int hasBasis = (i % (1 << (j + 1))) / (1 << j);
         if (hasBasis == 0) {
           int k = 1 << j;
-          if (i + k < (1 << dim)) {
+          if (i + k < (1 << latticeDim)) {
             edgeStarts[index] = projectedVertices[i];
             edgeEnds[index] = projectedVertices[i + k];
             index++;
@@ -164,7 +165,7 @@ template <int N> struct Lattice : AbstractLattice {
 
   void generateLatticeFunc(int size) {
     valid = false;
-    int maxSize = int(std::pow(size + 1, dim));
+    int maxSize = int(std::pow(size + 1, latticeDim));
     vertices.resize(maxSize);
 
     int halfSizeNegative = std::ceil(-size / 2.f);
@@ -176,7 +177,7 @@ template <int N> struct Lattice : AbstractLattice {
       vertices[i] = newVertex;
 
       newVertex[0] += 1;
-      for (int j = 0; j < dim - 1; ++j) {
+      for (int j = 0; j < latticeDim - 1; ++j) {
         if (newVertex[j] > halfSizePositive) {
           newVertex[j] = halfSizeNegative;
           newVertex[j + 1] += 1;
@@ -229,7 +230,7 @@ template <int N> struct Lattice : AbstractLattice {
 
   // Vec3f stereographic3D(Vec<N, float> &point) {
   //   if (N < 3 || N > 5) {
-  //     std::cerr << "Error: Unsupported dimension " << N << std::endl;
+  //     std::cerr << "Error: Unsupported latticeDimension " << N << std::endl;
   //     return Vec3f(0);
   //   }
 
@@ -242,10 +243,10 @@ template <int N> struct Lattice : AbstractLattice {
     // return stereographic3D(point);
   }
 
-  virtual void uploadVertices(BufferObject &buffer, BufferObject &colorBuffer) {
+  virtual void uploadVertices(BufferObject &vertexBuffer, BufferObject &colorBuffer) {
     if (shouldUploadVertices) {
-      buffer.bind();
-      buffer.data(projectedVertices.size() * 3 * sizeof(float),
+      vertexBuffer.bind();
+      vertexBuffer.data(projectedVertices.size() * 3 * sizeof(float),
                   projectedVertices.data());
 
       colorBuffer.bind();

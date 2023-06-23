@@ -190,7 +190,7 @@ public:
       drawSlice(g);
     }
 
-    slice->drawPickable(g);
+    slice->drawPickables(g);
 
     g.popMatrix();
   }
@@ -304,9 +304,9 @@ public:
       basis1.setNoCalls(lattice->getBasis(value, 0));
       basis2.setNoCalls(lattice->getBasis(value, 1));
       basis3.setNoCalls(lattice->getBasis(value, 2));
-      if (lattice->dim > 3) {
+      if (lattice->latticeDim > 3) {
         basis4.setNoCalls(lattice->getBasis(value, 3));
-        if (lattice->dim > 4) {
+        if (lattice->latticeDim > 4) {
           basis5.setNoCalls(lattice->getBasis(value, 4));
         }
       }
@@ -334,16 +334,13 @@ public:
       basis1.setNoCalls(lattice->getBasis(basisNum.get(), 0));
       basis2.setNoCalls(lattice->getBasis(basisNum.get(), 1));
       basis3.setNoCalls(lattice->getBasis(basisNum.get(), 2));
-      if (lattice->dim > 3) {
+      if (lattice->latticeDim > 3) {
         basis4.setNoCalls(lattice->getBasis(basisNum.get(), 3));
-        if (lattice->dim > 4) {
+        if (lattice->latticeDim > 4) {
           basis5.setNoCalls(lattice->getBasis(basisNum.get(), 4));
         }
       }
     });
-
-    slicePlaneSize.registerChangeCallback(
-        [&](float value) { slice->setWindow(value, sliceDepth.get()); });
 
     sliceDim.registerChangeCallback([&](int value) {
       millerNum.max(crystalDim.get() - value - 1);
@@ -355,7 +352,7 @@ public:
     });
 
     sliceDepth.registerChangeCallback([&](float value) {
-      slice->setWindow(slicePlaneSize.get(), value);
+      slice->setDepth(value);
       slice->update();
     });
 

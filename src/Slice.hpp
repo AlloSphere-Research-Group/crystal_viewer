@@ -1,24 +1,43 @@
 #ifndef SLICE_HPP
 #define SLICE_HPP
 
-#include "Lattice.hpp"
+#include <array>
+#include <cmath>
+#include <string>
+#include <vector>
+
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <thread>
+
+#include "al/graphics/al_BufferObject.hpp"
+#include "al/graphics/al_Graphics.hpp"
+#include "al/graphics/al_Shapes.hpp"
+#include "al/graphics/al_VAOMesh.hpp"
 #include "al/math/al_Random.hpp"
+#include "al/math/al_Vec.hpp"
+#include "al/types/al_Color.hpp"
 #include "al/ui/al_PickableManager.hpp"
 
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
 
+#include "Lattice.hpp"
+
+using namespace al;
+
 struct AbstractSlice {
   virtual void update() = 0;
-  virtual void updateEdges() = 0;
+
+  virtual void updateNodes() = 0;
   virtual void updatePickables() = 0;
 
   virtual float getMiller(int millerNum, unsigned int index) = 0;
   virtual void setMiller(float value, int millerNum, unsigned int index) = 0;
   virtual void roundMiller() = 0;
 
-  // split to depth and window setting later
-  virtual void setWindow(float newWindowSize, float newWindowDepth) = 0;
+  virtual void setDepth(float newDepth) = 0;
 
   virtual int getVertexNum() = 0;
   virtual int getEdgeNum() = 0;
@@ -28,10 +47,7 @@ struct AbstractSlice {
   virtual void uploadEdges(BufferObject &startBuffer,
                            BufferObject &endBuffer) = 0;
 
-  virtual void drawPickable(Graphics &g) = 0;
-  // virtual void drawPlane(Graphics &g) = 0;
-  // virtual void drawBox(Graphics &g) = 0;
-  // virtual void drawBoxNodes(Graphics &g, VAOMesh &mesh) = 0;
+  virtual void drawPickables(Graphics &g) = 0;
 
   virtual void exportToTxt(std::string &filePath) = 0;
   virtual void exportToJson(std::string &filePath) = 0;
@@ -39,63 +55,83 @@ struct AbstractSlice {
   int latticeDim;
   int sliceDim;
 
-  bool dirty{false};
-  bool dirtyEdges{false};
-
+  float sliceDepth{0.f};
   float edgeThreshold{1.1f};
-  float windowSize{0.f};
-  float windowDepth{0.f};
 
   PickableManager pickableManager;
   VAOMesh box;
+
+  std::atomic<bool> dirty{false};
+  std::atomic<bool> valid{false};
+
+  bool shouldUploadVertices{false};
+  bool shouldUploadEdges{false};
+};
+
+struct CrystalNode {
+  unsigned int id;
+  Vec3f pos;
+  int overlap;
+  PickableBB pickable;
+  std::vector<std::pair<int, Vec3f>> neighbours;
+
+  CrystalNode(std::string name) : pickable(name) {}
+
+  void addNeighbour(CrystalNode neighbourNode) {
+    Vec3f vecToNeighbour = neighbourNode.pos - pos;
+    neighbours.push_back({neighbourNode.id, vecToNeighbour});
+  }
+
+  void sortNeighbours() {
+    for (int i = 0; i < neighbours.size(); ++i) {
+      for (int j = i + 1; j < neighbours.size(); ++j) {
+        Vec3f diff = neighbours[i].second - neighbours[j].second;
+
+        if (diff[0] > 0) {
+          neighbours[i].swap(neighbours[j]);
+        } else if (diff[0] == 0.f) {
+          std::cout << "remove, diff_x same: " << neighbours[i].second
+                    << std::endl;
+          if (diff[1] > 0) {
+            neighbours[i].swap(neighbours[j]);
+          } else if (diff[1] == 0.f) {
+            std::cout << "remove, diff_xy same" << std::endl;
+            if (diff[2] > 0) {
+              neighbours[i].swap(neighbours[j]);
+            } else if (diff[2] == 0.f) {
+              std::cout << "remove diff same wtf" << std::endl;
+            }
+          }
+        }
+      }
+    }
+  }
 };
 
 template <int N, int M> struct Slice : AbstractSlice {
-  struct CrystalNode {
-    int id;
-    Vec3f pos;
-    int overlap;
-    PickableBB pickable;
-
-    std::vector<std::pair<int, Vec3f>> neighbours;
-
-    void addNeighbour(CrystalNode neighbourNode) {
-      Vec3f dist = neighbourNode.pos - pos;
-      neighbours.push_back({neighbourNode.id, dist});
-    }
-  };
-
   Lattice<N> *lattice;
 
   std::vector<CrystalNode> nodes;
 
-  std::vector<Vec<N, float>> millerIdx;
-  std::vector<Vec<N, float>> normal;
+  std::array<Vec<N, float>, N - M> millerIndices;
+  std::array<Vec<N, float>, N - M> normals;
+  std::array<Vec<N, float>, M> sliceBasis;
 
-  std::vector<Vec<N, float>> sliceBasis;
-
-  std::vector<Vec<N, float>> planeVertices;
-  std::vector<Vec3f> subspaceVertices;
-  std::vector<int> connectivity;
+  std::vector<Vec3f> projectedVertices;
   std::vector<Color> colors;
   std::vector<Vec3f> edgeStarts;
   std::vector<Vec3f> edgeEnds;
 
-  std::vector<Vec3f> unitCell;
-
-  std::vector<std::pair<unsigned int, unsigned int>> boxVertices;
-  VAOMesh slicePlane, sliceBox, planeEdges, boxEdges, unitCellMesh;
+  std::vector<CrystalNode *> unitCells;
+  VAOMesh unitCellMesh;
 
   Slice() {
     latticeDim = N;
     sliceDim = M;
-    millerIdx.resize(N - M);
-    normal.resize(N);
-    sliceBasis.resize(M);
 
     for (int i = 0; i < N - M; ++i) {
-      millerIdx[i] = 0.f;
-      millerIdx[i][i] = 1.f;
+      millerIndices[i] = 0.f;
+      millerIndices[i][i] = 1.f;
     }
   }
 
@@ -103,179 +139,173 @@ template <int N, int M> struct Slice : AbstractSlice {
         std::shared_ptr<Lattice<N>> latticePtr) {
     latticeDim = N;
     sliceDim = M;
-    millerIdx.resize(N - M);
-    normal.resize(N);
-    sliceBasis.resize(M);
+
     lattice = latticePtr.get();
 
     if (oldSlice == nullptr) {
       for (int i = 0; i < N - M; ++i) {
-        millerIdx[i] = 0.f;
-        millerIdx[i][i] = 1.f;
+        millerIndices[i] = 0.f;
+        millerIndices[i][i] = 1.f;
       }
     } else {
+      sliceDepth = oldSlice->sliceDepth;
       edgeThreshold = oldSlice->edgeThreshold;
-      windowSize = oldSlice->windowSize;
-      windowDepth = oldSlice->windowDepth;
+
       int oldLatticeDim = oldSlice->latticeDim;
       int oldSliceDim = oldSlice->sliceDim;
 
       for (int i = 0; i < N - M; ++i) {
-        millerIdx[i] = 0.f;
+        millerIndices[i] = 0.f;
+
         if (i < oldLatticeDim - oldSliceDim) {
           for (int j = 0; j < N && j < oldLatticeDim; ++j) {
-            millerIdx[i][j] = oldSlice->getMiller(i, j);
+            millerIndices[i][j] = oldSlice->getMiller(i, j);
           }
         } else {
-          millerIdx[i][i] = 1.f;
+          millerIndices[i][i] = 1.f;
         }
       }
     }
 
-    addWireBox(box, 0.1f);
+    addWireBox(box, 0.2f);
     box.update();
 
-    updateWindow();
     update();
   }
 
   virtual void update() {
     dirty = true;
 
-    computeNormal();
+    computeNormals();
 
-    planeVertices.clear();
-    boxVertices.clear();
-    subspaceVertices.clear();
-    pickableManager.clear();
-    unitCell.clear();
+    for (auto &b : sliceBasis) {
+      std::cout << "basis: " << b << std::endl;
+    }
+
+    // TODO reset other unitcell related stuff
+    unitCells.clear();
     unitCellMesh.reset();
 
     nodes.clear();
 
-    int index = 0;
+    projectedVertices.clear();
+    pickableManager.clear();
 
-    for (int i = 0; i < lattice->vertices.size(); ++i) {
-      Vec<N, float> &vertex = lattice->vertices[i];
+    Vec<N - M, float> dist;
 
-      Vec<N - M, float> dist = distanceToPlane(vertex);
+    for (auto &vertex : lattice->vertices) {
+      // distance to hyperplane
+      for (int i = 0; i < N - M; ++i) {
+        dist[i] = vertex.dot(normals[i]);
+      }
 
-      if (dist.mag() < windowDepth) {
-        CrystalNode newNode;
-        Vec<N, float> projVertex = vertex;
+      if (dist.mag() < sliceDepth) {
+        Vec<N, float> newVertex = vertex;
 
-        for (int j = 0; j < N - M; ++j) {
-          projVertex -= dist[j] * normal[j];
+        for (int i = 0; i < N - M; ++i) {
+          newVertex -= dist[i] * normals[i];
         }
 
+        std::cout << " newVtx: " << newVertex << std::endl;
+
+        Vec3f projVertex = project(newVertex);
+
+        std::cout << " projVtx: " << projVertex << std::endl;
+
         bool skip = false;
-        for (auto &sv : subspaceVertices) {
-          Vec3f projv = project(projVertex) - sv;
-          if (projv.sumAbs() < 1E-4) {
+        for (auto &node : nodes) {
+          Vec3f diff = projVertex - node.pos;
+          std::cout << "diff: " << diff << std::endl;
+          if (diff.sumAbs() < 1E-4) {
+            std::cout << "overlapped" << std::endl;
+            node.overlap++;
             skip = true;
             break;
           }
-          // std::cout << projv.sumAbs() << std::endl;
         }
 
         if (skip) {
+          std::cout << "skipped" << std::endl;
           continue;
         }
 
-        // TODO: initialize with name
-        //  pickables.emplace_back(std::to_string(index));
+        CrystalNode newNode(std::to_string(nodes.size()));
         newNode.id = nodes.size();
-        newNode.pos = project(projVertex);
+        newNode.pos = projVertex;
+        // std::cout << "projVertex: " << projVertex << std::endl;
+        // std::cout << " node.pos: " << newNode.pos << std::endl;
         newNode.pickable.set(box);
         newNode.pickable.pose.setPos(newNode.pos);
         nodes.push_back(newNode);
-
-        planeVertices.push_back(projVertex);
-
-        subspaceVertices.emplace_back(project(projVertex));
-
-        index++;
       }
     }
 
-    for (auto &cn : nodes) {
-      pickableManager << cn.pickable;
+    for (auto &node : nodes) {
+      projectedVertices.push_back(node.pos);
+      pickableManager << node.pickable;
     }
 
-    updateEdges();
+    updateNodes();
   }
 
-  virtual void updateEdges() {
-    dirtyEdges = true;
+  virtual void updateNodes() {
+    colors.clear();
+
     edgeStarts.clear();
     edgeEnds.clear();
 
-    colors.clear();
-    connectivity.resize(subspaceVertices.size());
-    for (auto &c : connectivity) {
-      c = 0;
-    }
-
+    // TODO: remove this check
     for (int i = 0; i < nodes.size(); ++i) {
-      for (int j = 0; j < i - 1; ++j) {
+      for (int j = 0; j < i; ++j) {
         Vec3f v = nodes[i].pos - nodes[j].pos;
         if (v.sumAbs() < 1E-4) {
-          std::cout << nodes[i].pos << " - " << nodes[j].pos << std::endl;
+          std::cout << "**********This should've been checked before\n"
+                    << nodes[i].pos << " - " << nodes[j].pos << std::endl;
         }
       }
     }
 
     for (int i = 0; i < nodes.size(); ++i) {
       for (int j = i + 1; j < nodes.size(); ++j) {
-        Vec3f dist = nodes[i].pos - nodes[j].pos;
-        if (dist.mag() < edgeThreshold) {
+        Vec3f diff = nodes[i].pos - nodes[j].pos;
+        if (diff.mag() < edgeThreshold) {
           nodes[i].addNeighbour(nodes[j]);
           nodes[j].addNeighbour(nodes[i]);
+
           edgeStarts.push_back(nodes[i].pos);
           edgeEnds.push_back(nodes[j].pos);
         }
       }
-      HSV hsv(nodes[i].neighbours.size() / 8.f);
+    }
+
+    for (auto &node : nodes) {
+      node.sortNeighbours();
+
+      // TODO: add environment check
+      HSV hsv(node.neighbours.size() / 8.f);
       hsv.wrapHue();
       colors.emplace_back(hsv);
     }
 
-    // for (int i = 0; i < subspaceVertices.size(); ++i) {
-    //   float maxDist = 0;
-
-    //   for (int j = i + 1; j < subspaceVertices.size(); ++j) {
-    //     Vec3f dist = subspaceVertices[i] - subspaceVertices[j];
-    //     if (dist.mag() < edgeThreshold) {
-    //       edgeStarts.push_back(subspaceVertices[i]);
-    //       edgeEnds.push_back(subspaceVertices[j]);
-    //       maxDist = maxDist < dist.mag() ? dist.mag() : maxDist;
-    //       connectivity[i] += 1;
-    //       connectivity[j] += 1;
-    //     }
-    //   }
-    //   // HSV hsv(maxDist);
-    //   HSV hsv(connectivity[i] / 4.f);
-    //   hsv.wrapHue();
-    //   colors.emplace_back(hsv);
-    // }
+    shouldUploadVertices = true;
+    shouldUploadEdges = true;
   }
 
   virtual void uploadVertices(BufferObject &vertexBuffer,
                               BufferObject &colorBuffer) {
-    if (dirty) {
+    if (shouldUploadVertices) {
       vertexBuffer.bind();
-      vertexBuffer.data(subspaceVertices.size() * 3 * sizeof(float),
-                        subspaceVertices.data());
+      vertexBuffer.data(projectedVertices.size() * 3 * sizeof(float),
+                        projectedVertices.data());
 
       colorBuffer.bind();
       colorBuffer.data(colors.size() * 4 * sizeof(float), colors.data());
-
-      dirty = false;
+      shouldUploadVertices = false;
     }
   }
 
   virtual void uploadEdges(BufferObject &startBuffer, BufferObject &endBuffer) {
-    if (dirtyEdges) {
+    if (shouldUploadEdges) {
       startBuffer.bind();
       startBuffer.data(edgeStarts.size() * 3 * sizeof(float),
                        edgeStarts.data());
@@ -283,39 +313,44 @@ template <int N, int M> struct Slice : AbstractSlice {
       endBuffer.bind();
       endBuffer.data(edgeEnds.size() * 3 * sizeof(float), edgeEnds.data());
 
-      dirtyEdges = false;
+      shouldUploadEdges = false;
     }
   }
 
   virtual void updatePickables() {
-    for (auto &cn : nodes) {
-      auto &pickable = cn.pickable;
+    for (auto &node : nodes) {
+      auto &pickable = node.pickable;
+
       if (pickable.selected.get() && pickable.hover.get()) {
-        std::cout << "Node: " << cn.id << std::endl;
-        std::cout << " neighbours: " << cn.neighbours.size() << std::endl;
-        for (auto &n : cn.neighbours) {
+        // TODO: output this to UI
+        std::cout << "Node: " << node.id << std::endl;
+        std::cout << " neighbours: " << node.neighbours.size() << std::endl;
+        for (auto &n : node.neighbours) {
           std::cout << "  " << n.first << ": " << n.second << std::endl;
         }
+
         bool hasPoint = false;
-        for (std::vector<Vec3f>::iterator it = unitCell.begin();
-             it != unitCell.end();) {
-          if (*it == pickable.pose.get().pos()) {
+        for (std::vector<CrystalNode *>::iterator it = unitCells.begin();
+             it != unitCells.end();) {
+          if (*it == &node) {
             hasPoint = true;
-            it = unitCell.erase(it);
+            it = unitCells.erase(it);
             pickable.selected = false;
           } else {
             it++;
           }
         }
-        if (!hasPoint && unitCell.size() <= M) {
-          unitCell.push_back(pickable.pose.get().pos());
 
-          if (unitCell.size() == M + 1) {
-            Vec3f origin = unitCell[0];
+        if (!hasPoint && unitCells.size() <= M) {
+          unitCells.push_back(&node);
+
+          if (unitCells.size() == M + 1) {
+            Vec3f origin = unitCells[0]->pos;
             std::array<Vec3f, M> unitBasis;
             Vec3f endCorner = origin;
+
             for (int i = 0; i < M; ++i) {
-              unitBasis[i] = unitCell[i + 1] - origin;
+              unitBasis[i] = unitCells[i + 1]->pos - origin;
               endCorner += unitBasis[i];
             }
 
@@ -323,18 +358,20 @@ template <int N, int M> struct Slice : AbstractSlice {
             unitCellMesh.primitive(Mesh::LINES);
 
             for (int i = 0; i < M; ++i) {
+              Vec3f &newPoint = unitCells[i + 1]->pos;
               unitCellMesh.vertex(origin);
-              unitCellMesh.vertex(unitCell[i + 1]);
+              unitCellMesh.vertex(newPoint);
+
               if (M == 2) {
-                unitCellMesh.vertex(unitCell[i + 1]);
+                unitCellMesh.vertex(newPoint);
                 unitCellMesh.vertex(endCorner);
               } else if (M == 3) {
                 for (int k = 0; k < M; ++k) {
                   if (k != i) {
-                    unitCellMesh.vertex(unitCell[i + 1]);
-                    unitCellMesh.vertex(unitCell[i + 1] + unitBasis[k]);
+                    unitCellMesh.vertex(newPoint);
+                    unitCellMesh.vertex(newPoint + unitBasis[k]);
 
-                    unitCellMesh.vertex(unitCell[i + 1] + unitBasis[k]);
+                    unitCellMesh.vertex(newPoint + unitBasis[k]);
                     unitCellMesh.vertex(endCorner);
                   }
                 }
@@ -350,17 +387,17 @@ template <int N, int M> struct Slice : AbstractSlice {
     }
   }
 
-  virtual void drawPickable(Graphics &g) {
-    for (auto &cn : nodes) {
-      auto &pickable = cn.pickable;
+  virtual void drawPickables(Graphics &g) {
+    for (auto &node : nodes) {
+      auto &pickable = node.pickable;
       g.color(1, 1, 1);
       pickable.drawBB(g);
     }
 
     g.color(1, 1, 0);
-    for (auto &u : unitCell) {
+    for (auto *u : unitCells) {
       g.pushMatrix();
-      g.translate(u);
+      g.translate(u->pos);
       g.draw(box);
       g.popMatrix();
     }
@@ -368,56 +405,19 @@ template <int N, int M> struct Slice : AbstractSlice {
     g.draw(unitCellMesh);
   }
 
-  // virtual void drawPlane(Graphics &g) {
-  //   g.pushMatrix();
-  //   // TODO: calculate bivector
-  //   Quatf rot = Quatf::getRotationTo(
-  //       Vec3f(0.f, 0.f, 1.f), Vec3f(normal[0][0], normal[0][1],
-  //       normal[0][2]));
-  //   g.rotate(rot);
-  //   g.draw(slicePlane);
-  //   g.popMatrix();
-  // }
-
-  // virtual void drawBox(Graphics &g) {
-  //   g.pushMatrix();
-  //   // TODO: calculate bivector
-  //   Quatf rot = Quatf::getRotationTo(
-  //       Vec3f(0.f, 0.f, 1.f), Vec3f(normal[0][0], normal[0][1],
-  //       normal[0][2]));
-  //   g.rotate(rot);
-  //   g.draw(sliceBox);
-  //   g.popMatrix();
-  // }
-
-  // virtual void drawBoxNodes(Graphics &g, VAOMesh &mesh) {
-  //   for (auto &bv : boxVertices) {
-  //     g.pushMatrix();
-  //     // TODO: consider projection
-  //     // g.translate(lattice->vertices[bv.first][0],
-  //     //            lattice->vertices[bv.first][1],
-  //     //            lattice->vertices[bv.first][2]);
-  //     g.scale(0.04f);
-  //     g.draw(mesh);
-  //     g.popMatrix();
-  //   }
-
-  //  g.draw(boxEdges);
-  //}
-
   virtual void setMiller(float value, int millerNum, unsigned int index) {
     if (millerNum >= N - M || index >= N) {
       std::cerr << "Error: Miller write index out of bounds" << std::endl;
       return;
     }
 
-    millerIdx[millerNum][index] = value;
+    millerIndices[millerNum][index] = value;
 
     update();
   }
 
   virtual void roundMiller() {
-    for (auto &miller : millerIdx) {
+    for (auto &miller : millerIndices) {
       for (auto &v : miller) {
         v = std::round(v);
       }
@@ -427,86 +427,74 @@ template <int N, int M> struct Slice : AbstractSlice {
   }
 
   virtual float getMiller(int millerNum, unsigned int index) {
-    return millerIdx[millerNum][index];
+    return millerIndices[millerNum][index];
   }
 
-  virtual void setWindow(float newWindowSize, float newWindowDepth) {
-    windowSize = newWindowSize;
-    windowDepth = newWindowDepth;
+  virtual void setDepth(float newDepth) {
+    sliceDepth = newDepth;
 
-    updateWindow();
-  }
-
-  void updateWindow() {
-    slicePlane.reset();
-    addSurface(slicePlane, 2, 2, windowSize, windowSize);
-    slicePlane.update();
-
-    sliceBox.reset();
-    addCuboid(sliceBox, 0.5f * windowSize, 0.5f * windowSize, windowDepth);
-    sliceBox.update();
-  }
-
-  Vec<N - M, float> distanceToPlane(Vec<N, float> &point) {
-    Vec<N - M, float> projVec{0.f};
-
-    // normal vector has been normalized
-    for (int i = 0; i < N - M; ++i) {
-      projVec[i] = point.dot(normal[i]) / normal[i].mag();
-    }
-
-    return projVec;
+    update();
   }
 
   Vec<M, float> project(Vec<N, float> &point) {
     Vec<M, float> projVec{0.f};
 
     for (int i = 0; i < M; ++i) {
-      projVec[i] = point.dot(normal[N - M + i]) / normal[N - M + i].mag();
+      // sliceBasis is normalized
+      projVec[i] = point.dot(sliceBasis[i]); //  / sliceBasis[i].mag()
     }
 
     return projVec;
   }
 
-  void computeNormal() {
+  void computeNormals() {
     for (int i = 0; i < N - M; ++i) {
-      normal[i] = 0;
+      normals[i] = 0;
       for (int j = 0; j < N; ++j) {
-        normal[i] += millerIdx[i][j] * lattice->basis[j];
+        normals[i] += millerIndices[i][j] * lattice->basis[j];
       }
-      normal[i].normalize();
+      normals[i].normalize();
     }
 
-    for (int i = N - M; i < N; ++i) {
-      normal[i] = lattice->basis[i];
-      normal[i].normalize();
+    for (int i = 0; i < M; ++i) {
+      Vec<N, float> &newBasis = sliceBasis[i];
+      newBasis = lattice->basis[i];
+      newBasis.normalize();
 
+      for (auto &n : normals) {
+        newBasis = newBasis - newBasis.dot(n) * n;
+      }
+      std::cout << "newbasis_afternormal: " << newBasis << std::endl;
       for (int j = 0; j < i; ++j) {
-        normal[i] = normal[i] - normal[i].dot(normal[j]);
+        newBasis = newBasis - newBasis.dot(sliceBasis[j]) * sliceBasis[j];
       }
 
-      if (normal[i].mag() < 1e-20) {
+      std::cout << "newbasis: " << newBasis << std::endl;
+
+      if (newBasis.mag() < 1e-20) {
+        std::cout << "Unable to create orthogonal basis, randomizing"
+                  << std::endl;
+
         do {
           for (int j = 0; j < N; ++j) {
-            // TODO: is random the right move here?
-            normal[i][j] = rnd::uniformS();
+            newBasis[j] = rnd::uniformS();
           }
-
-          normal[i].normalize();
+          newBasis.normalize();
 
           for (int j = 0; j < i; ++j) {
-            normal[i] = normal[i] - normal[i].dot(normal[j]);
+            newBasis = newBasis - newBasis.dot(sliceBasis[j]);
           }
-        } while (normal[i].mag() < 1e-20);
-      }
+        } while (newBasis.mag() < 1e-20);
 
-      normal[i].normalize();
+        newBasis.normalize();
+      }
     }
   }
 
-  virtual int getVertexNum() { return subspaceVertices.size(); }
+  virtual int getVertexNum() { return projectedVertices.size(); }
   virtual int getEdgeNum() { return edgeStarts.size(); }
 
+  // TODO: confine this to unit cell
   virtual void exportToTxt(std::string &filePath) {
     filePath += ".txt";
     std::ofstream txtOut(filePath);
@@ -525,7 +513,7 @@ template <int N, int M> struct Slice : AbstractSlice {
 
     txtOut << std::endl;
 
-    for (auto &v : millerIdx) {
+    for (auto &v : millerIndices) {
       for (int i = 0; i < N - 1; ++i) {
         txtOut << std::to_string(v[i]) + " ";
       }
@@ -534,16 +522,16 @@ template <int N, int M> struct Slice : AbstractSlice {
 
     txtOut << std::endl;
 
-    for (int i = N - M; i < normal.size(); ++i) {
+    for (int i = 0; i < sliceBasis.size(); ++i) {
       for (int j = 0; j < N - 1; ++j) {
-        txtOut << std::to_string(normal[i][j]) + " ";
+        txtOut << std::to_string(sliceBasis[i][j]) + " ";
       }
-      txtOut << std::to_string(normal[i][N - 1]) << std::endl;
+      txtOut << std::to_string(sliceBasis[i][N - 1]) << std::endl;
     }
 
     txtOut << std::endl;
 
-    for (auto &v : subspaceVertices) {
+    for (auto &v : projectedVertices) {
       // for (auto &v : planeVertices) {
       for (int i = 0; i < N - 1; ++i) {
         txtOut << std::to_string(v[i]) + " ";
@@ -562,15 +550,15 @@ template <int N, int M> struct Slice : AbstractSlice {
       newJson["lattice_basis"].push_back(v);
     }
 
-    for (auto &v : millerIdx) {
+    for (auto &v : millerIndices) {
       newJson["miller_index"].push_back(v);
     }
 
-    for (int i = N - M; i < normal.size(); ++i) {
-      newJson["projection_basis"].push_back(normal[i]);
+    for (auto &v : sliceBasis) {
+      newJson["projection_basis"].push_back(v);
     }
 
-    for (auto &v : subspaceVertices) {
+    for (auto &v : projectedVertices) {
       newJson["vertices"].push_back(v);
     }
 
