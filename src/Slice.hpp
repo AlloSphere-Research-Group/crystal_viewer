@@ -38,6 +38,7 @@ struct AbstractSlice {
   virtual void roundMiller() = 0;
 
   virtual void setDepth(float newDepth) = 0;
+  virtual void setThreshold(float newThreshold) = 0;
 
   virtual int getVertexNum() = 0;
   virtual int getEdgeNum() = 0;
@@ -48,6 +49,8 @@ struct AbstractSlice {
                            BufferObject &endBuffer) = 0;
 
   virtual void drawPickables(Graphics &g) = 0;
+
+  virtual void resetUnitCell() = 0;
 
   virtual void exportToTxt(std::string &filePath) = 0;
   virtual void exportToJson(std::string &filePath) = 0;
@@ -71,13 +74,14 @@ struct AbstractSlice {
 struct CrystalNode {
   unsigned int id;
   Vec3f pos;
-  int overlap;
+  unsigned int overlap;
+  unsigned int environment;
   PickableBB pickable;
   std::vector<std::pair<int, Vec3f>> neighbours;
 
   CrystalNode(std::string name) : pickable(name) {}
 
-  void addNeighbour(CrystalNode neighbourNode) {
+  void addNeighbour(CrystalNode &neighbourNode) {
     Vec3f vecToNeighbour = neighbourNode.pos - pos;
     neighbours.push_back({neighbourNode.id, vecToNeighbour});
   }
@@ -87,24 +91,40 @@ struct CrystalNode {
       for (int j = i + 1; j < neighbours.size(); ++j) {
         Vec3f diff = neighbours[i].second - neighbours[j].second;
 
-        if (diff[0] > 0) {
+        if (diff[0] > 1E-4) {
           neighbours[i].swap(neighbours[j]);
-        } else if (diff[0] == 0.f) {
-          std::cout << "remove, diff_x same: " << neighbours[i].second
-                    << std::endl;
-          if (diff[1] > 0) {
+        } else if (abs(diff[0]) <= 1E-4) {
+          if (diff[1] > 1E-4) {
             neighbours[i].swap(neighbours[j]);
-          } else if (diff[1] == 0.f) {
-            std::cout << "remove, diff_xy same" << std::endl;
-            if (diff[2] > 0) {
+          } else if (abs(diff[1]) <= 1E-4) {
+            // std::cout << "remove, diff_xy same" << std::endl;
+            if (diff[2] > 1E-4) {
               neighbours[i].swap(neighbours[j]);
-            } else if (diff[2] == 0.f) {
+            } else if (abs(diff[2]) <= 1E-4) {
               std::cout << "remove diff same wtf" << std::endl;
             }
           }
         }
       }
     }
+  }
+
+  bool compareNeighbours(CrystalNode *newNode) {
+    std::vector<std::pair<int, Vec3f>> &newNeighbours = newNode->neighbours;
+
+    if (newNeighbours.size() != neighbours.size()) {
+      return false;
+    }
+
+    for (int i = 0; i < newNeighbours.size(); ++i) {
+      Vec3f diff = neighbours[i].second - newNeighbours[i].second;
+
+      if (diff.sumAbs() > 1E-4) {
+        return false;
+      }
+    }
+
+    return true;
   }
 };
 
@@ -118,11 +138,14 @@ template <int N, int M> struct Slice : AbstractSlice {
   std::array<Vec<N, float>, M> sliceBasis;
 
   std::vector<Vec3f> projectedVertices;
+
+  std::vector<CrystalNode *> environments;
   std::vector<Color> colors;
   std::vector<Vec3f> edgeStarts;
   std::vector<Vec3f> edgeEnds;
 
-  std::vector<CrystalNode *> unitCells;
+  std::vector<CrystalNode *> cornerNodes;
+  std::vector<CrystalNode *> unitCellNodes;
   VAOMesh unitCellMesh;
 
   Slice() {
@@ -178,12 +201,9 @@ template <int N, int M> struct Slice : AbstractSlice {
 
     computeNormals();
 
-    for (auto &b : sliceBasis) {
-      std::cout << "basis: " << b << std::endl;
-    }
-
-    // TODO reset other unitcell related stuff
-    unitCells.clear();
+    // TODO: reset other unitcell related stuff
+    cornerNodes.clear();
+    unitCellNodes.clear();
     unitCellMesh.reset();
 
     nodes.clear();
@@ -206,18 +226,12 @@ template <int N, int M> struct Slice : AbstractSlice {
           newVertex -= dist[i] * normals[i];
         }
 
-        std::cout << " newVtx: " << newVertex << std::endl;
-
         Vec3f projVertex = project(newVertex);
-
-        std::cout << " projVtx: " << projVertex << std::endl;
 
         bool skip = false;
         for (auto &node : nodes) {
           Vec3f diff = projVertex - node.pos;
-          std::cout << "diff: " << diff << std::endl;
           if (diff.sumAbs() < 1E-4) {
-            std::cout << "overlapped" << std::endl;
             node.overlap++;
             skip = true;
             break;
@@ -225,15 +239,12 @@ template <int N, int M> struct Slice : AbstractSlice {
         }
 
         if (skip) {
-          std::cout << "skipped" << std::endl;
           continue;
         }
 
         CrystalNode newNode(std::to_string(nodes.size()));
         newNode.id = nodes.size();
         newNode.pos = projVertex;
-        // std::cout << "projVertex: " << projVertex << std::endl;
-        // std::cout << " node.pos: " << newNode.pos << std::endl;
         newNode.pickable.set(box);
         newNode.pickable.pose.setPos(newNode.pos);
         nodes.push_back(newNode);
@@ -249,21 +260,11 @@ template <int N, int M> struct Slice : AbstractSlice {
   }
 
   virtual void updateNodes() {
+    environments.clear();
     colors.clear();
 
     edgeStarts.clear();
     edgeEnds.clear();
-
-    // TODO: remove this check
-    for (int i = 0; i < nodes.size(); ++i) {
-      for (int j = 0; j < i; ++j) {
-        Vec3f v = nodes[i].pos - nodes[j].pos;
-        if (v.sumAbs() < 1E-4) {
-          std::cout << "**********This should've been checked before\n"
-                    << nodes[i].pos << " - " << nodes[j].pos << std::endl;
-        }
-      }
-    }
 
     for (int i = 0; i < nodes.size(); ++i) {
       for (int j = i + 1; j < nodes.size(); ++j) {
@@ -281,8 +282,25 @@ template <int N, int M> struct Slice : AbstractSlice {
     for (auto &node : nodes) {
       node.sortNeighbours();
 
-      // TODO: add environment check
-      HSV hsv(node.neighbours.size() / 8.f);
+      bool newEnvironment = true;
+      for (int i = 0; i < environments.size(); ++i) {
+        if (node.compareNeighbours(environments[i])) {
+          newEnvironment = false;
+          node.environment = i;
+          break;
+        }
+      }
+
+      if (newEnvironment) {
+        node.environment = environments.size();
+        environments.push_back(&node);
+      }
+    }
+
+    std::cout << "environment size: " << environments.size() << std::endl;
+
+    for (auto &node : nodes) {
+      HSV hsv(float(node.environment) / environments.size());
       hsv.wrapHue();
       colors.emplace_back(hsv);
     }
@@ -324,33 +342,35 @@ template <int N, int M> struct Slice : AbstractSlice {
       if (pickable.selected.get() && pickable.hover.get()) {
         // TODO: output this to UI
         std::cout << "Node: " << node.id << std::endl;
+        std::cout << " overlap: " << node.overlap << std::endl;
+        std::cout << " env: " << node.environment << std::endl;
         std::cout << " neighbours: " << node.neighbours.size() << std::endl;
         for (auto &n : node.neighbours) {
           std::cout << "  " << n.first << ": " << n.second << std::endl;
         }
 
         bool hasPoint = false;
-        for (std::vector<CrystalNode *>::iterator it = unitCells.begin();
-             it != unitCells.end();) {
+        for (std::vector<CrystalNode *>::iterator it = cornerNodes.begin();
+             it != cornerNodes.end();) {
           if (*it == &node) {
             hasPoint = true;
-            it = unitCells.erase(it);
+            it = cornerNodes.erase(it);
             pickable.selected = false;
           } else {
             it++;
           }
         }
 
-        if (!hasPoint && unitCells.size() <= M) {
-          unitCells.push_back(&node);
+        if (!hasPoint && cornerNodes.size() <= M) {
+          cornerNodes.push_back(&node);
 
-          if (unitCells.size() == M + 1) {
-            Vec3f origin = unitCells[0]->pos;
+          if (cornerNodes.size() == M + 1) {
+            Vec3f origin = cornerNodes[0]->pos;
             std::array<Vec3f, M> unitBasis;
             Vec3f endCorner = origin;
 
             for (int i = 0; i < M; ++i) {
-              unitBasis[i] = unitCells[i + 1]->pos - origin;
+              unitBasis[i] = cornerNodes[i + 1]->pos - origin;
               endCorner += unitBasis[i];
             }
 
@@ -358,7 +378,7 @@ template <int N, int M> struct Slice : AbstractSlice {
             unitCellMesh.primitive(Mesh::LINES);
 
             for (int i = 0; i < M; ++i) {
-              Vec3f &newPoint = unitCells[i + 1]->pos;
+              Vec3f &newPoint = cornerNodes[i + 1]->pos;
               unitCellMesh.vertex(origin);
               unitCellMesh.vertex(newPoint);
 
@@ -379,6 +399,9 @@ template <int N, int M> struct Slice : AbstractSlice {
             }
 
             unitCellMesh.update();
+
+            // TODO: add non-axis aligned box test to populate
+            // unitcellnodes
           }
         }
 
@@ -395,7 +418,7 @@ template <int N, int M> struct Slice : AbstractSlice {
     }
 
     g.color(1, 1, 0);
-    for (auto *u : unitCells) {
+    for (auto *u : cornerNodes) {
       g.pushMatrix();
       g.translate(u->pos);
       g.draw(box);
@@ -432,7 +455,11 @@ template <int N, int M> struct Slice : AbstractSlice {
 
   virtual void setDepth(float newDepth) {
     sliceDepth = newDepth;
+    update();
+  }
 
+  virtual void setThreshold(float newThreshold) {
+    edgeThreshold = newThreshold;
     update();
   }
 
@@ -458,41 +485,65 @@ template <int N, int M> struct Slice : AbstractSlice {
 
     for (int i = 0; i < M; ++i) {
       Vec<N, float> &newBasis = sliceBasis[i];
+
       newBasis = lattice->basis[i];
       newBasis.normalize();
 
       for (auto &n : normals) {
         newBasis = newBasis - newBasis.dot(n) * n;
       }
-      std::cout << "newbasis_afternormal: " << newBasis << std::endl;
       for (int j = 0; j < i; ++j) {
         newBasis = newBasis - newBasis.dot(sliceBasis[j]) * sliceBasis[j];
       }
 
-      std::cout << "newbasis: " << newBasis << std::endl;
-
-      if (newBasis.mag() < 1e-20) {
-        std::cout << "Unable to create orthogonal basis, randomizing"
-                  << std::endl;
-
-        do {
-          for (int j = 0; j < N; ++j) {
-            newBasis[j] = rnd::uniformS();
-          }
+      if (newBasis.sumAbs() < 1E-4) {
+        // std::cout << "Unable to create orthogonal basis, using remaining
+        // basis"
+        //           << std::endl;
+        for (int remainingIdx = M; remainingIdx < N; ++remainingIdx) {
+          newBasis = lattice->basis[remainingIdx];
           newBasis.normalize();
 
-          for (int j = 0; j < i; ++j) {
-            newBasis = newBasis - newBasis.dot(sliceBasis[j]);
+          for (auto &n : normals) {
+            newBasis = newBasis - newBasis.dot(n) * n;
           }
-        } while (newBasis.mag() < 1e-20);
+          for (int j = 0; j < i; ++j) {
+            newBasis = newBasis - newBasis.dot(sliceBasis[j]) * sliceBasis[j];
+          }
 
-        newBasis.normalize();
+          if (newBasis.sumAbs() >= 1E-4) {
+            break;
+          }
+        }
+
+        if (newBasis.sumAbs() < 1E-4) {
+          std::cout << "Unable to create orthogonal basis, randomizing"
+                    << std::endl;
+          do {
+            for (int j = 0; j < N; ++j) {
+              newBasis[j] = rnd::uniformS();
+            }
+            newBasis.normalize();
+
+            for (int j = 0; j < i; ++j) {
+              newBasis = newBasis - newBasis.dot(sliceBasis[j]) * sliceBasis[j];
+            }
+          } while (newBasis.sumAbs() < 1E-4);
+        }
       }
+
+      newBasis.normalize();
     }
   }
 
   virtual int getVertexNum() { return projectedVertices.size(); }
   virtual int getEdgeNum() { return edgeStarts.size(); }
+
+  virtual void resetUnitCell() {
+    cornerNodes.clear();
+    unitCellNodes.clear();
+    unitCellMesh.reset();
+  }
 
   // TODO: confine this to unit cell
   virtual void exportToTxt(std::string &filePath) {

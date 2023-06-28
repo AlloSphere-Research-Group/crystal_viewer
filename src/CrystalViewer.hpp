@@ -351,15 +351,11 @@ public:
       generate(crystalDim.get(), value);
     });
 
-    sliceDepth.registerChangeCallback([&](float value) {
-      slice->setDepth(value);
-      slice->update();
-    });
+    sliceDepth.registerChangeCallback(
+        [&](float value) { slice->setDepth(value); });
 
-    edgeThreshold.registerChangeCallback([&](float value) {
-      slice->edgeThreshold = value;
-      slice->update();
-    });
+    edgeThreshold.registerChangeCallback(
+        [&](float value) { slice->setThreshold(value); });
 
     millerNum.registerChangeCallback([&](int value) {
       miller1.setNoCalls(slice->getMiller(value, 0));
@@ -408,6 +404,9 @@ public:
     miller5.registerChangeCallback(
         [&](float value) { slice->setMiller(value, millerNum.get(), 4); });
 
+    resetUnitCell.registerChangeCallback(
+        {[&](bool value) { slice->resetUnitCell(); }});
+
     exportTxt.registerChangeCallback([&](bool value) {
       std::string newPath = File::conformPathToOS(dataDir + fileName);
       slice->exportToTxt(newPath);
@@ -426,7 +425,7 @@ public:
                     << sliceEdgeColor << slicePlaneSize << slicePlaneColor
                     << sliceDim << sliceDepth << recomputeEdges << edgeThreshold
                     << millerNum << intMiller << miller1 << miller2 << miller3
-                    << miller4 << miller5 << boxMin << boxMax;
+                    << miller4 << miller5 << resetUnitCell;
 
     return true;
   }
@@ -531,8 +530,7 @@ public:
       ImGui::Unindent();
     }
 
-    ParameterGUI::draw(&boxMin);
-    ParameterGUI::draw(&boxMax);
+    ParameterGUI::draw(&resetUnitCell);
 
     ImGui::NewLine();
 
@@ -674,14 +672,13 @@ private:
   Parameter miller4{"miller4", "", 0, -5, 5};
   Parameter miller5{"miller5", "", 0, -5, 5};
 
-  ParameterVec3 boxMin{"boxMin", "", Vec3f{0, 0, 0}};
-  ParameterVec3 boxMax{"boxMax", "", Vec3f{1, 1, 1}};
+  Trigger resetUnitCell{"resetUnitCell", ""};
 
   std::string dataDir;
   char filePath[128]{};
   char fileName[128]{};
-  Trigger exportTxt{"ExportTxt", ""};
-  Trigger exportJson{"ExportJson", ""};
+  Trigger exportTxt{"exportTxt", ""};
+  Trigger exportJson{"exportJson", ""};
 };
 
 #endif // CRYSTAL_VIEWER_HPP
