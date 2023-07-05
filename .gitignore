@@ -23,5 +23,6 @@ build
 *.BMP
 *.bin
 *.binary
+.vs*
 
 apps/

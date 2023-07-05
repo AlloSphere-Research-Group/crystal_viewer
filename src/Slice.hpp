@@ -31,7 +31,7 @@ struct AbstractSlice {
   virtual void update() = 0;
 
   virtual void updateNodes() = 0;
-  virtual void updatePickables() = 0;
+  virtual void updatePickables(bool updateNodes) = 0;
 
   virtual float getMiller(int millerNum, unsigned int index) = 0;
   virtual void setMiller(float value, int millerNum, unsigned int index) = 0;
@@ -74,10 +74,13 @@ struct AbstractSlice {
 struct CrystalNode {
   unsigned int id;
   Vec3f pos;
-  unsigned int overlap;
+  unsigned int overlap{0};
   unsigned int environment;
   PickableBB pickable;
   std::vector<std::pair<int, Vec3f>> neighbours;
+
+  Vec3f unitCellCoord;
+  bool insideUnitCell;
 
   CrystalNode(std::string name) : pickable(name) {}
 
@@ -144,9 +147,11 @@ template <int N, int M> struct Slice : AbstractSlice {
   std::vector<Vec3f> edgeStarts;
   std::vector<Vec3f> edgeEnds;
 
+  std::array<Vec3f, M> unitBasis;
   std::vector<CrystalNode *> cornerNodes;
   std::vector<CrystalNode *> unitCellNodes;
   VAOMesh unitCellMesh;
+  bool hasUnitCell{false};
 
   Slice() {
     latticeDim = N;
@@ -205,6 +210,7 @@ template <int N, int M> struct Slice : AbstractSlice {
     cornerNodes.clear();
     unitCellNodes.clear();
     unitCellMesh.reset();
+    hasUnitCell = false;
 
     nodes.clear();
 
@@ -247,7 +253,7 @@ template <int N, int M> struct Slice : AbstractSlice {
         newNode.pos = projVertex;
         newNode.pickable.set(box);
         newNode.pickable.pose.setPos(newNode.pos);
-        nodes.push_back(newNode);
+        nodes.push_back(std::move(newNode));
       }
     }
 
@@ -335,18 +341,21 @@ template <int N, int M> struct Slice : AbstractSlice {
     }
   }
 
-  virtual void updatePickables() {
+  virtual void updatePickables(bool updateNodes) {
     for (auto &node : nodes) {
       auto &pickable = node.pickable;
 
       if (pickable.selected.get() && pickable.hover.get()) {
-        // TODO: output this to UI
-        std::cout << "Node: " << node.id << std::endl;
-        std::cout << " overlap: " << node.overlap << std::endl;
-        std::cout << " env: " << node.environment << std::endl;
-        std::cout << " neighbours: " << node.neighbours.size() << std::endl;
-        for (auto &n : node.neighbours) {
-          std::cout << "  " << n.first << ": " << n.second << std::endl;
+        if (!updateNodes) {
+          // TODO: output this to UI
+          std::cout << "Node: " << node.id << std::endl;
+          std::cout << " overlap: " << node.overlap << std::endl;
+          std::cout << " env: " << node.environment << std::endl;
+          std::cout << " neighbours: " << node.neighbours.size() << std::endl;
+          // for (auto &n : node.neighbours) {
+          //   std::cout << "  " << n.first << ": " << n.second << std::endl;
+          // }
+          return;
         }
 
         bool hasPoint = false;
@@ -356,6 +365,15 @@ template <int N, int M> struct Slice : AbstractSlice {
             hasPoint = true;
             it = cornerNodes.erase(it);
             pickable.selected = false;
+            if (hasUnitCell) {
+              unitCellNodes.clear();
+              unitCellMesh.reset();
+              for (auto &c : colors) {
+                c.a = 1.f;
+              }
+              shouldUploadVertices = true;
+              hasUnitCell = false;
+            }
           } else {
             it++;
           }
@@ -364,9 +382,9 @@ template <int N, int M> struct Slice : AbstractSlice {
         if (!hasPoint && cornerNodes.size() <= M) {
           cornerNodes.push_back(&node);
 
+          // Construct Unit Cell
           if (cornerNodes.size() == M + 1) {
             Vec3f origin = cornerNodes[0]->pos;
-            std::array<Vec3f, M> unitBasis;
             Vec3f endCorner = origin;
 
             for (int i = 0; i < M; ++i) {
@@ -400,8 +418,39 @@ template <int N, int M> struct Slice : AbstractSlice {
 
             unitCellMesh.update();
 
-            // TODO: add non-axis aligned box test to populate
-            // unitcellnodes
+            Mat3f unitCellMatInv;
+            unitCellMatInv.setIdentity();
+            for (int i = 0; i < unitBasis.size(); ++i) {
+              unitCellMatInv.setCol3(unitBasis[i][0], unitBasis[i][1],
+                                     unitBasis[i][2], i);
+            }
+
+            if (!invert(unitCellMatInv)) {
+              std::cout << "Unable to create unit cell: Co-planar vectors"
+                        << std::endl;
+              break;
+            }
+
+            // check if inside unitCell
+            for (int i = 0; i < nodes.size(); ++i) {
+              Vec3f pos = nodes[i].pos - origin;
+              Vec3f unitCellCoord = unitCellMatInv * pos;
+              nodes[i].unitCellCoord = unitCellCoord;
+
+              if (unitCellCoord.min() > -1E-4 &&
+                  unitCellCoord.max() < (1.f + 1E-4)) {
+                nodes[i].insideUnitCell = true;
+                unitCellNodes.push_back(&nodes[i]);
+                colors[i].a = 1.f;
+              } else {
+                nodes[i].insideUnitCell = false;
+                colors[i].a = 0.1f;
+              }
+            }
+
+            shouldUploadVertices = true;
+            hasUnitCell = true;
+            std::cout << "unitCell: " << unitCellNodes.size() << std::endl;
           }
         }
 
@@ -573,14 +622,21 @@ template <int N, int M> struct Slice : AbstractSlice {
 
     txtOut << std::endl;
 
-    for (int i = 0; i < sliceBasis.size(); ++i) {
+    for (auto &basis : sliceBasis) {
       for (int j = 0; j < N - 1; ++j) {
-        txtOut << std::to_string(sliceBasis[i][j]) + " ";
+        txtOut << std::to_string(basis[j]) + " ";
       }
-      txtOut << std::to_string(sliceBasis[i][N - 1]) << std::endl;
+      txtOut << std::to_string(basis[N - 1]) << std::endl;
     }
 
     txtOut << std::endl;
+
+    for (auto &basis : unitBasis) {
+      for (int j = 0; j < M - 1; ++j) {
+        txtOut << std::to_string(basis[j]) + " ";
+      }
+      txtOut << std::to_string(basis[M - 1]) << std::endl;
+    }
 
     for (auto &v : projectedVertices) {
       // for (auto &v : planeVertices) {
@@ -597,21 +653,29 @@ template <int N, int M> struct Slice : AbstractSlice {
     filePath += ".json";
     json newJson;
 
-    for (auto &v : lattice->basis) {
-      newJson["lattice_basis"].push_back(v);
+    for (auto &b : lattice->basis) {
+      newJson["lattice_basis"].push_back(b);
     }
 
-    for (auto &v : millerIndices) {
-      newJson["miller_index"].push_back(v);
+    for (auto &millerIndex : millerIndices) {
+      newJson["miller_index"].push_back(millerIndex);
     }
 
-    for (auto &v : sliceBasis) {
-      newJson["projection_basis"].push_back(v);
+    for (auto &basis : sliceBasis) {
+      newJson["projection_basis"].push_back(basis);
     }
 
-    for (auto &v : projectedVertices) {
-      newJson["vertices"].push_back(v);
+    for (auto &basis : unitBasis) {
+      newJson["unitCell_basis"].push_back(basis);
     }
+
+    for (auto *node : unitCellNodes) {
+      newJson["vertices"].push_back(node->pos);
+    }
+
+    // for (auto &v : projectedVertices) {
+    //   newJson["vertices"].push_back(v);
+    // }
 
     std::ofstream jsonOut(filePath);
     if (!jsonOut.good()) {

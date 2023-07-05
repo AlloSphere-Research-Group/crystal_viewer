@@ -199,7 +199,7 @@ public:
     lattice->uploadVertices(latticeVertices, latticeColors);
 
     g.shader(instancing_shader);
-    instancing_shader.uniform("scale", latticeSphereSize.get());
+    instancing_shader.uniform("scale", sphereSize.get());
     g.update();
 
     latticeSphere.vao().bind();
@@ -212,7 +212,7 @@ public:
     lattice->uploadEdges(latticeEdgeStarts, latticeEdgeEnds);
 
     g.shader(edge_instancing_shader);
-    edge_instancing_shader.uniform("color", latticeEdgeColor.get());
+    edge_instancing_shader.uniform("color", edgeColor.get());
     g.update();
 
     latticeEdge.vao().bind();
@@ -221,13 +221,10 @@ public:
   }
 
   void drawSlice(Graphics &g) {
-    // g.color(slicePlaneColor.get());
-    // slice->drawPlane(g);
-
     slice->uploadVertices(sliceVertices, sliceColors);
 
     g.shader(instancing_shader);
-    instancing_shader.uniform("scale", sliceSphereSize.get());
+    instancing_shader.uniform("scale", sphereSize.get());
     g.update();
 
     sliceSphere.vao().bind();
@@ -240,7 +237,7 @@ public:
     slice->uploadEdges(sliceEdgeStarts, sliceEdgeEnds);
 
     g.shader(edge_instancing_shader);
-    edge_instancing_shader.uniform("color", sliceEdgeColor.get());
+    edge_instancing_shader.uniform("color", edgeColor.get());
     g.update();
 
     sliceEdge.vao().bind();
@@ -265,16 +262,8 @@ public:
 
     dataDir.copy(filePath, sizeof filePath - 1);
 
-    latticeSphereColor.setHint("showAlpha", true);
-    latticeSphereColor.setHint("hsv", true);
-    latticeEdgeColor.setHint("showAlpha", true);
-    latticeEdgeColor.setHint("hsv", true);
-    sliceSphereColor.setHint("showAlpha", true);
-    sliceSphereColor.setHint("hsv", true);
-    sliceEdgeColor.setHint("showAlpha", true);
-    sliceEdgeColor.setHint("hsv", true);
-    slicePlaneColor.setHint("showAlpha", true);
-    slicePlaneColor.setHint("hsv", true);
+    edgeColor.setHint("showAlpha", true);
+    edgeColor.setHint("hsv", true);
 
     crystalDim.registerChangeCallback([&](int value) {
       basisNum.max(value - 1);
@@ -289,10 +278,17 @@ public:
       if (millerNum.get() > value - sliceDim.get() - 1) {
         millerNum.set(value - sliceDim.get() - 1);
       }
-
-      generate(value, sliceDim.get());
-
       latticeSize.setNoCalls(latticeSize.getDefault());
+      generate(value, sliceDim.get());
+    });
+
+    sliceDim.registerChangeCallback([&](int value) {
+      millerNum.max(crystalDim.get() - value - 1);
+      if (millerNum.get() > crystalDim.get() - value - 1) {
+        millerNum.set(crystalDim.get() - value - 1);
+      }
+      latticeSize.setNoCalls(latticeSize.getDefault());
+      generate(crystalDim.get(), value);
     });
 
     latticeSize.registerChangeCallback([&](int value) {
@@ -340,15 +336,6 @@ public:
           basis5.setNoCalls(lattice->getBasis(basisNum.get(), 4));
         }
       }
-    });
-
-    sliceDim.registerChangeCallback([&](int value) {
-      millerNum.max(crystalDim.get() - value - 1);
-      if (millerNum.get() > crystalDim.get() - value - 1) {
-        millerNum.set(crystalDim.get() - value - 1);
-      }
-
-      generate(crystalDim.get(), value);
     });
 
     sliceDepth.registerChangeCallback(
@@ -417,15 +404,23 @@ public:
       slice->exportToJson(newPath);
     });
 
-    parameterServer << crystalDim << latticeSize << basisNum << basis1 << basis2
-                    << basis3 << basis4 << basis5 << resetBasis << showLattice
-                    << showSlice << enableSliceEdge << showSlicePlane
-                    << latticeSphereSize << latticeSphereColor
-                    << latticeEdgeColor << sliceSphereSize << sliceSphereColor
-                    << sliceEdgeColor << slicePlaneSize << slicePlaneColor
-                    << sliceDim << sliceDepth << recomputeEdges << edgeThreshold
-                    << millerNum << intMiller << miller1 << miller2 << miller3
-                    << miller4 << miller5 << resetUnitCell;
+    savePreset.registerChangeCallback(
+        [&](float value) { presets.storePreset(presetName); });
+
+    loadPreset.registerChangeCallback(
+        [&](float value) { presets.recallPreset(presetName); });
+
+    parameterServer << crystalDim << sliceDim << latticeSize << basisNum
+                    << basis1 << basis2 << basis3 << basis4 << basis5
+                    << resetBasis << showLattice << showSlice << sphereSize
+                    << edgeColor << sliceDepth << edgeThreshold << millerNum
+                    << intMiller << miller1 << miller2 << miller3 << miller4
+                    << miller5 << resetUnitCell;
+
+    // TODO: add basis and miller to preset
+    presets << crystalDim << sliceDim << latticeSize << showLattice << showSlice
+            << sphereSize << edgeColor << sliceDepth << edgeThreshold
+            << intMiller;
 
     return true;
   }
@@ -434,6 +429,7 @@ public:
     ImGui::Begin("Crystal");
 
     ParameterGUI::draw(&crystalDim);
+    ParameterGUI::draw(&sliceDim);
     ParameterGUI::draw(&latticeSize);
 
     if (ImGui::CollapsingHeader("Edit Basis Vector",
@@ -464,43 +460,19 @@ public:
     }
 
     ParameterGUI::draw(&showLattice);
-
-    ParameterGUI::draw(&showSlice);
     ImGui::SameLine();
-    ParameterGUI::draw(&enableSliceEdge);
-
-    ParameterGUI::draw(&showSlicePlane);
+    ParameterGUI::draw(&showSlice);
 
     if (ImGui::CollapsingHeader("Edit Display Settings",
                                 ImGuiTreeNodeFlags_CollapsingHeader)) {
-      if (ImGui::BeginTabBar("displaySettings", ImGuiTabBarFlags_None)) {
-        if (ImGui::BeginTabItem("Lattice")) {
-          ParameterGUI::draw(&latticeSphereSize);
-          ParameterGUI::draw(&latticeSphereColor);
-          ParameterGUI::draw(&latticeEdgeColor);
-          ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Slice")) {
-          ParameterGUI::draw(&sliceSphereSize);
-          ParameterGUI::draw(&sliceSphereColor);
-          ParameterGUI::draw(&sliceEdgeColor);
-          ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("SlicingPlane")) {
-          ParameterGUI::draw(&slicePlaneSize);
-          ParameterGUI::draw(&slicePlaneColor);
-          ImGui::EndTabItem();
-        }
-        ImGui::EndTabBar();
-      }
+      ParameterGUI::draw(&sphereSize);
+      ParameterGUI::draw(&edgeColor);
     }
 
     ImGui::NewLine();
 
     if (showSlice.get()) {
-      ParameterGUI::draw(&sliceDim);
       ParameterGUI::draw(&sliceDepth);
-      ParameterGUI::draw(&recomputeEdges);
       ParameterGUI::draw(&edgeThreshold);
 
       ImGui::NewLine();
@@ -550,6 +522,18 @@ public:
     ParameterGUI::draw(&exportTxt);
     ImGui::SameLine();
     ParameterGUI::draw(&exportJson);
+
+    ImGui::InputText("preset", presetName, IM_ARRAYSIZE(presetName));
+    if (ImGui::IsItemActive()) {
+      navControl.active(false);
+    } else {
+      navControl.active(true);
+    }
+
+    // TODO: fix this
+    // ParameterGUI::draw(&savePreset);
+    // ImGui::SameLine();
+    // ParameterGUI::draw(&loadPreset);
 
     ImGui::End();
   }
@@ -629,7 +613,10 @@ private:
       latticeEdgeEnds;
   BufferObject sliceVertices, sliceColors, sliceEdgeStarts, sliceEdgeEnds;
 
+  PresetHandler presets{"presets", true};
+
   ParameterInt crystalDim{"crystalDim", "", 3, 3, 5};
+  ParameterInt sliceDim{"sliceDim", "", 2, 2, 2};
   ParameterInt latticeSize{"latticeSize", "", 1, 1, 15};
 
   ParameterInt basisNum{"basisNum", "", 0, 0, 2};
@@ -642,26 +629,11 @@ private:
 
   ParameterBool showLattice{"showLattice", "", 0};
   ParameterBool showSlice{"showSlice", "", 1};
-  ParameterBool enableSliceEdge{"enableSliceEdge", "", 0};
-  ParameterBool showSlicePlane{"showSlicePlane", "", 0};
 
-  Parameter latticeSphereSize{"latticeSphereSize", "", 0.02, 0.001, 1};
-  ParameterColor latticeSphereColor{"latticeSphereColor", "", Color(1.f, 0.8f)};
-  ParameterColor latticeEdgeColor{"latticeEdgeColor", "", Color(1.f, 0.5f)};
+  Parameter sphereSize{"sphereSize", "", 0.04, 0.001, 1};
+  ParameterColor edgeColor{"edgeColor", "", Color(1.f, 0.3f)};
 
-  Parameter sliceSphereSize{"sliceSphereSize", 0.04, 0.001, 1};
-  ParameterColor sliceSphereColor{"sliceSphereColor", "",
-                                  Color(1.f, 0.f, 0.f, 1.f)};
-  ParameterColor sliceEdgeColor{"sliceEdgeColor", "", Color(1.f, 0.5f)};
-
-  Parameter slicePlaneSize{"slicePlaneSize", "", 0.f, 0, 30.f};
-  ParameterColor slicePlaneColor{"slicePlaneColor", "",
-                                 Color(0.3f, 0.3f, 1.f, 0.3f)};
-
-  ParameterInt sliceDim{"sliceDim", "", 2, 2, 2};
   Parameter sliceDepth{"sliceDepth", "", 0, 0, 1000.f};
-
-  ParameterBool recomputeEdges{"recomputeEdges", "", 1.f};
   Parameter edgeThreshold{"edgeThreshold", "", 1.1f, 0.f, 2.f};
 
   ParameterInt millerNum{"millerNum", "", 0, 0, 0};
@@ -679,6 +651,10 @@ private:
   char fileName[128]{};
   Trigger exportTxt{"exportTxt", ""};
   Trigger exportJson{"exportJson", ""};
+
+  char presetName[128]{};
+  Trigger savePreset{"savePreset", ""};
+  Trigger loadPreset{"loadPreset", ""};
 };
 
 #endif // CRYSTAL_VIEWER_HPP

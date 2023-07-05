@@ -70,8 +70,11 @@ struct CrystalApp : DistributedAppWithState<State> {
   }
 
   bool onMouseDown(const Mouse &m) override {
-    viewer.slice->pickableManager.onMouseDown(graphics(), m, width(), height());
-    viewer.slice->updatePickables();
+    if (!ImGui::IsAnyWindowHovered()) {
+      viewer.slice->pickableManager.onMouseDown(graphics(), m, width(),
+                                                height());
+      viewer.slice->updatePickables(m.right());
+    }
     return true;
   }
 

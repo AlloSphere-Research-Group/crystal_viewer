@@ -35,7 +35,7 @@ struct AbstractLattice {
                            BufferObject &endBuffer) = 0;
 
   int latticeDim;
-  int latticeSize;
+  int latticeSize{1};
 
   std::atomic<bool> dirty{false};
   std::atomic<bool> valid{false};
@@ -60,7 +60,6 @@ template <int N> struct Lattice : AbstractLattice {
 
   Lattice() {
     latticeDim = N;
-    latticeSize = 1;
 
     for (int i = 0; i < N; ++i) {
       Vec<N, float> newVec(0);
@@ -75,7 +74,6 @@ template <int N> struct Lattice : AbstractLattice {
     latticeDim = N;
 
     if (oldLattice == nullptr) {
-      latticeSize = 1;
       for (int i = 0; i < N; ++i) {
         Vec<N, float> newVec(0);
         newVec[i] = 1.f;
@@ -83,7 +81,7 @@ template <int N> struct Lattice : AbstractLattice {
         basis[i] = newVec;
       }
     } else {
-      latticeSize = oldLattice->latticeSize;
+      // latticeSize = oldLattice->latticeSize; //reset latticeSize to 1
       for (int i = 0; i < latticeDim; ++i) {
         Vec<N, float> newVec(0);
         if (i < oldLattice->latticeDim) {
@@ -243,11 +241,12 @@ template <int N> struct Lattice : AbstractLattice {
     // return stereographic3D(point);
   }
 
-  virtual void uploadVertices(BufferObject &vertexBuffer, BufferObject &colorBuffer) {
+  virtual void uploadVertices(BufferObject &vertexBuffer,
+                              BufferObject &colorBuffer) {
     if (shouldUploadVertices) {
       vertexBuffer.bind();
       vertexBuffer.data(projectedVertices.size() * 3 * sizeof(float),
-                  projectedVertices.data());
+                        projectedVertices.data());
 
       colorBuffer.bind();
       colorBuffer.data(colors.size() * 4 * sizeof(float), colors.data());
