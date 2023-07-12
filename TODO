@@ -1,26 +1,6 @@
+add origin point to list, remove any interior points with 1 in their fract coord.
+
+add in a way to adjust basis for subspace
+
 add in the TINC interface to make data visible from TINC python client
 protobuf 4.2
-
-Organization Name
-
-·  ·  Project Title
-
-·  ·  Full name of Principal Investigator
-
-·  ·  An overview of the proposed project emphasizing any unique aspects and pilot studies (indicate area of emphasis for project – Medical Research or Science & Engineering Research)
-
-·  ·  A description of the methodologies and key personnel
-
-·  ·  A brief justification of the need for Keck Foundation support
-
-·  ·  An estimated budget broken down, if possible, by major areas, e.g. personnel, equipment, consumable supplies, etc.
-
-·  ·  With any remaining space within the 1 page limit, authors may add other details
-
-·  If a reference is necessary, abbreviate it as (Science, 323, 45, ‘11). DO NOT USE (Jones et al., 2011). Please avoid any illustrations.
-
-
-
-
-
-crystallography - harmonics? aural?

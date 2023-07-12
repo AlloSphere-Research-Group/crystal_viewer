@@ -432,6 +432,16 @@ public:
     ParameterGUI::draw(&sliceDim);
     ParameterGUI::draw(&latticeSize);
 
+    if (ImGui::CollapsingHeader("Edit Basis Vectort",
+                                ImGuiTreeNodeFlags_CollapsingHeader)) {
+      ImGui::Indent();
+      ParameterGUI::draw(&basisVec0);
+      ParameterGUI::draw(&basisVec1);
+      ParameterGUI::draw(&basisVec2);
+      ParameterGUI::draw(&basisVec3);
+      ParameterGUI::draw(&basisVec4);
+      ImGui::Unindent();
+    }
     if (ImGui::CollapsingHeader("Edit Basis Vector",
                                 ImGuiTreeNodeFlags_CollapsingHeader)) {
       ImGui::PushStyleColor(ImGuiCol_FrameBg,
@@ -502,6 +512,16 @@ public:
       ImGui::Unindent();
     }
 
+    ImGui::Text("Hyperplane Basis 0");
+    ImGui::Indent();
+    ImGui::Text("Hyperplane Basis 1");
+    ImGui::Text("Hyperplane Basis 2");
+    ImGui::Text("Hyperplane Basis 3");
+    ImGui::Text("Hyperplane Basis 4");
+    ImGui::Unindent();
+
+    ParameterGUI::draw(&sliceBasis0);
+
     ParameterGUI::draw(&resetUnitCell);
 
     ImGui::NewLine();
@@ -523,12 +543,12 @@ public:
     ImGui::SameLine();
     ParameterGUI::draw(&exportJson);
 
-    ImGui::InputText("preset", presetName, IM_ARRAYSIZE(presetName));
-    if (ImGui::IsItemActive()) {
-      navControl.active(false);
-    } else {
-      navControl.active(true);
-    }
+    // ImGui::InputText("preset", presetName, IM_ARRAYSIZE(presetName));
+    // if (ImGui::IsItemActive()) {
+    //   navControl.active(false);
+    // } else {
+    //   navControl.active(true);
+    // }
 
     // TODO: fix this
     // ParameterGUI::draw(&savePreset);
@@ -619,6 +639,12 @@ private:
   ParameterInt sliceDim{"sliceDim", "", 2, 2, 2};
   ParameterInt latticeSize{"latticeSize", "", 1, 1, 15};
 
+  ParameterVec5 basisVec0{"basisVec0", ""};
+  ParameterVec5 basisVec1{"basisVec1", ""};
+  ParameterVec5 basisVec2{"basisVec2", ""};
+  ParameterVec5 basisVec3{"basisVec3", ""};
+  ParameterVec5 basisVec4{"basisVec4", ""};
+
   ParameterInt basisNum{"basisNum", "", 0, 0, 2};
   Parameter basis1{"basis1", "", 1, -5, 5};
   Parameter basis2{"basis2", "", 0, -5, 5};
@@ -643,6 +669,8 @@ private:
   Parameter miller3{"miller3", "", 0, -5, 5};
   Parameter miller4{"miller4", "", 0, -5, 5};
   Parameter miller5{"miller5", "", 0, -5, 5};
+
+  ParameterVec5 sliceBasis0{"sliceBasis0", ""};
 
   Trigger resetUnitCell{"resetUnitCell", ""};
 

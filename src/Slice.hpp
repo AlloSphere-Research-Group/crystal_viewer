@@ -81,6 +81,7 @@ struct CrystalNode {
 
   Vec3f unitCellCoord;
   bool insideUnitCell;
+  bool isInteriorNode;
 
   CrystalNode(std::string name) : pickable(name) {}
 
@@ -440,10 +441,18 @@ template <int N, int M> struct Slice : AbstractSlice {
               if (unitCellCoord.min() > -1E-4 &&
                   unitCellCoord.max() < (1.f + 1E-4)) {
                 nodes[i].insideUnitCell = true;
+                nodes[i].isInteriorNode = false;
+                for (int j = 0; j < unitCellCoord.size(); ++j) {
+                  if (unitCellCoord[j] > 1E-4 &&
+                      unitCellCoord[j] < (1.f - 1E-4)) {
+                    nodes[i].isInteriorNode = true;
+                  }
+                }
                 unitCellNodes.push_back(&nodes[i]);
                 colors[i].a = 1.f;
               } else {
                 nodes[i].insideUnitCell = false;
+                nodes[i].isInteriorNode = false;
                 colors[i].a = 0.1f;
               }
             }
@@ -549,8 +558,13 @@ template <int N, int M> struct Slice : AbstractSlice {
         // std::cout << "Unable to create orthogonal basis, using remaining
         // basis"
         //           << std::endl;
+        // TODO: add in ability to adjust basis
         for (int remainingIdx = M; remainingIdx < N; ++remainingIdx) {
           newBasis = lattice->basis[remainingIdx];
+          // if (remainingIdx == M) {
+          //   newBasis =
+          //       Vec4f(1.f, -0.5f * std::sqrt(2.f), 0.f, 0.5f * std::sqrt(2.f));
+          // }
           newBasis.normalize();
 
           for (auto &n : normals) {
@@ -670,7 +684,11 @@ template <int N, int M> struct Slice : AbstractSlice {
     }
 
     for (auto *node : unitCellNodes) {
-      newJson["vertices"].push_back(node->pos);
+      newJson["unitCell_positions"].push_back(node->pos);
+      if (node->isInteriorNode) {
+        newJson["unitCell_interior_fract_coords"].push_back(
+            node->unitCellCoord);
+      }
     }
 
     // for (auto &v : projectedVertices) {
