@@ -21,10 +21,9 @@ struct AbstractLattice {
 
   virtual void generateLattice(int size = 1) = 0;
 
-  virtual void setBasis(float value, unsigned int basisNum,
-                        unsigned int vecIdx) = 0;
-  virtual float getBasis(unsigned int basisNum, unsigned int vecIdx) = 0;
+  virtual void setBasis(Vec5f &value, unsigned int basisNum) = 0;
   virtual void resetBasis() = 0;
+  virtual Vec5f getBasis(unsigned int basisNum) = 0;
 
   virtual int getVertexNum() = 0;
   virtual int getEdgeNum() = 0;
@@ -62,9 +61,8 @@ template <int N> struct Lattice : AbstractLattice {
     latticeDim = N;
 
     for (int i = 0; i < N; ++i) {
-      Vec<N, float> newVec(0);
-      newVec[i] = 1.f;
-      basis[i] = newVec;
+      basis[i] = 0.f;
+      basis[i][i] = 1.f;
     }
 
     update();
@@ -75,25 +73,18 @@ template <int N> struct Lattice : AbstractLattice {
 
     if (oldLattice == nullptr) {
       for (int i = 0; i < N; ++i) {
-        Vec<N, float> newVec(0);
-        newVec[i] = 1.f;
-
-        basis[i] = newVec;
+        basis[i] = 0.f;
+        basis[i][i] = 1.f;
       }
     } else {
       // latticeSize = oldLattice->latticeSize; //reset latticeSize to 1
       for (int i = 0; i < latticeDim; ++i) {
-        Vec<N, float> newVec(0);
         if (i < oldLattice->latticeDim) {
-          for (int j = 0; j < std::min(latticeDim, oldLattice->latticeDim);
-               ++j) {
-            newVec[j] = oldLattice->getBasis(i, j);
-          }
+          basis[i] = oldLattice->getBasis(i);
         } else {
-          newVec[i] = 1.f;
+          basis[i] = 0.f;
+          basis[i][i] = 1.f;
         }
-
-        basis[i] = newVec;
       }
     }
 
@@ -185,33 +176,31 @@ template <int N> struct Lattice : AbstractLattice {
     valid = true;
   }
 
-  virtual void setBasis(float value, unsigned int basisNum,
-                        unsigned int vecIdx) {
-    if (basisNum >= N || vecIdx >= N) {
+  virtual void setBasis(Vec5f &value, unsigned int basisNum) {
+    if (basisNum >= basis.size()) {
       std::cerr << "Error: Basis vector write index out of bounds" << std::endl;
       return;
     }
-    basis[basisNum][vecIdx] = value;
+    basis[basisNum] = value;
 
     update();
   }
 
   virtual void resetBasis() {
-    for (int i = 0; i < N; ++i) {
-      Vec<N, float> newVec(0);
-      newVec[i] = 1.f;
-      basis[i] = newVec;
+    for (int i = 0; i < basis.size(); ++i) {
+      basis[i] = 0.f;
+      basis[i][i] = 1.f;
     }
 
     update();
   }
 
-  virtual float getBasis(unsigned int basisNum, unsigned int vecIdx) {
-    if (basisNum >= N || vecIdx >= N) {
+  virtual Vec5f getBasis(unsigned int basisNum) {
+    if (basisNum >= basis.size()) {
       std::cerr << "Error: Basis vector read index out of bounds" << std::endl;
-      return 0.f;
+      return Vec5f();
     }
-    return basis[basisNum][vecIdx];
+    return Vec5f(basis[basisNum]);
   }
 
   virtual int getVertexNum() { return projectedVertices.size(); }

@@ -20,7 +20,7 @@
 class CrystalViewer {
 public:
   bool init() {
-    generate(crystalDim.get(), sliceDim.get());
+    createCrystal(crystalDim.get(), sliceDim.get());
 
     addSphere(latticeSphere, 1.0);
 
@@ -128,7 +128,7 @@ public:
                "edge_instancing_frag.glsl", "edge_instancing_geom.glsl");
   }
 
-  void generate(int newDim, int newSliceDim) {
+  void createCrystal(int newDim, int newSliceDim) {
     switch (newDim) {
     case 3: {
       auto newLattice = std::make_shared<Lattice<3>>(lattice);
@@ -166,11 +166,6 @@ public:
       std::cerr << "Dimension " << newDim << " not supported." << std::endl;
       return;
     }
-  }
-
-  void setBasis(float value, int basisNum, unsigned int vecIdx) {
-    lattice->setBasis(value, basisNum, vecIdx);
-    slice->update();
   }
 
   void draw(Graphics &g, Nav &nav) {
@@ -245,6 +240,72 @@ public:
                           slice->getEdgeNum());
   }
 
+  void setBasis(Vec5f &value, int basisNum) {
+    lattice->setBasis(value, basisNum);
+    slice->update();
+  }
+
+  void setDimensionHints(float value) {
+    basis0.setHint("dimension", value);
+    basis1.setHint("dimension", value);
+    basis2.setHint("dimension", value);
+    basis3.setHint("dimension", value);
+    basis4.setHint("dimension", value);
+    miller0.setHint("dimension", value);
+    miller1.setHint("dimension", value);
+    miller2.setHint("dimension", value);
+    hyperplane0.setHint("dimension", value);
+    hyperplane1.setHint("dimension", value);
+    hyperplane2.setHint("dimension", value);
+    sliceBasis0.setHint("dimension", value);
+    sliceBasis1.setHint("dimension", value);
+    sliceBasis2.setHint("dimension", value);
+    sliceBasis3.setHint("dimension", value);
+  }
+
+  void setHideHints(int crystal_dim, int slice_dim) {
+    if (crystal_dim > 3) {
+      basis3.removeHint("hide");
+      if (crystal_dim > 4) {
+        basis4.removeHint("hide");
+      } else {
+        basis4.setHint("hide", 1.f);
+      }
+    } else {
+      basis3.setHint("hide", 1.f);
+      basis4.setHint("hide", 1.f);
+    }
+
+    if (slice_dim > 2) {
+      sliceBasis2.removeHint("hide");
+      if (slice_dim > 3) {
+        sliceBasis3.removeHint("hide");
+      } else {
+        sliceBasis3.setHint("hide", 1.f);
+      }
+    } else {
+      sliceBasis2.setHint("hide", 1.f);
+      sliceBasis3.setHint("hide", 1.f);
+    }
+
+    if (crystal_dim - slice_dim > 1) {
+      miller1.removeHint("hide");
+      hyperplane1.removeHint("hide");
+      if (crystal_dim - slice_dim > 2) {
+        miller2.removeHint("hide");
+        hyperplane2.removeHint("hide");
+      } else {
+        miller2.setHint("hide", 1.f);
+        hyperplane2.setHint("hide", 1.f);
+      }
+    } else {
+      miller1.setHint("hide", 1.f);
+      miller2.setHint("hide", 1.f);
+      hyperplane1.setHint("hide", 1.f);
+      hyperplane2.setHint("hide", 1.f);
+    }
+  }
+
   bool registerCallbacks(ParameterServer &parameterServer) {
     dataDir = File::conformPathToOS(File::currentPath());
 
@@ -265,30 +326,27 @@ public:
     edgeColor.setHint("showAlpha", true);
     edgeColor.setHint("hsv", true);
 
+    setDimensionHints(crystalDim.getDefault());
+    setHideHints(crystalDim.getDefault(), sliceDim.getDefault());
+
     crystalDim.registerChangeCallback([&](int value) {
-      basisNum.max(value - 1);
-      if (basisNum.get() > value - 1) {
-        basisNum.set(value - 1);
-      }
       sliceDim.max(value - 1);
       if (sliceDim.get() > value - 1) {
         sliceDim.set(value - 1);
       }
-      millerNum.max(value - sliceDim.get() - 1);
-      if (millerNum.get() > value - sliceDim.get() - 1) {
-        millerNum.set(value - sliceDim.get() - 1);
-      }
+
+      setDimensionHints((float)value);
+      setHideHints(value, sliceDim.get());
+
       latticeSize.setNoCalls(latticeSize.getDefault());
-      generate(value, sliceDim.get());
+      createCrystal(value, sliceDim.get());
     });
 
     sliceDim.registerChangeCallback([&](int value) {
-      millerNum.max(crystalDim.get() - value - 1);
-      if (millerNum.get() > crystalDim.get() - value - 1) {
-        millerNum.set(crystalDim.get() - value - 1);
-      }
+      setHideHints(crystalDim.get(), value);
+
       latticeSize.setNoCalls(latticeSize.getDefault());
-      generate(crystalDim.get(), value);
+      createCrystal(crystalDim.get(), value);
     });
 
     latticeSize.registerChangeCallback([&](int value) {
@@ -296,46 +354,25 @@ public:
       slice->update();
     });
 
-    basisNum.registerChangeCallback([&](int value) {
-      basis1.setNoCalls(lattice->getBasis(value, 0));
-      basis2.setNoCalls(lattice->getBasis(value, 1));
-      basis3.setNoCalls(lattice->getBasis(value, 2));
-      if (lattice->latticeDim > 3) {
-        basis4.setNoCalls(lattice->getBasis(value, 3));
-        if (lattice->latticeDim > 4) {
-          basis5.setNoCalls(lattice->getBasis(value, 4));
-        }
-      }
-    });
+    basis0.registerChangeCallback([&](Vec5f &value) { setBasis(value, 0); });
 
-    basis1.registerChangeCallback(
-        [&](float value) { setBasis(value, basisNum.get(), 0); });
+    basis1.registerChangeCallback([&](Vec5f &value) { setBasis(value, 1); });
 
-    basis2.registerChangeCallback(
-        [&](float value) { setBasis(value, basisNum.get(), 1); });
+    basis2.registerChangeCallback([&](Vec5f &value) { setBasis(value, 2); });
 
-    basis3.registerChangeCallback(
-        [&](float value) { setBasis(value, basisNum.get(), 2); });
+    basis3.registerChangeCallback([&](Vec5f &value) { setBasis(value, 3); });
 
-    basis4.registerChangeCallback(
-        [&](float value) { setBasis(value, basisNum.get(), 3); });
-
-    basis5.registerChangeCallback(
-        [&](float value) { setBasis(value, basisNum.get(), 4); });
+    basis4.registerChangeCallback([&](Vec5f &value) { setBasis(value, 4); });
 
     resetBasis.registerChangeCallback([&](bool value) {
+      basis0.setNoCalls(basis0.getDefault());
+      basis1.setNoCalls(basis1.getDefault());
+      basis2.setNoCalls(basis2.getDefault());
+      basis3.setNoCalls(basis3.getDefault());
+      basis4.setNoCalls(basis4.getDefault());
       lattice->resetBasis();
-      slice->update();
 
-      basis1.setNoCalls(lattice->getBasis(basisNum.get(), 0));
-      basis2.setNoCalls(lattice->getBasis(basisNum.get(), 1));
-      basis3.setNoCalls(lattice->getBasis(basisNum.get(), 2));
-      if (lattice->latticeDim > 3) {
-        basis4.setNoCalls(lattice->getBasis(basisNum.get(), 3));
-        if (lattice->latticeDim > 4) {
-          basis5.setNoCalls(lattice->getBasis(basisNum.get(), 4));
-        }
-      }
+      slice->update();
     });
 
     sliceDepth.registerChangeCallback(
@@ -344,52 +381,32 @@ public:
     edgeThreshold.registerChangeCallback(
         [&](float value) { slice->setThreshold(value); });
 
-    millerNum.registerChangeCallback([&](int value) {
-      miller1.setNoCalls(slice->getMiller(value, 0));
-      miller2.setNoCalls(slice->getMiller(value, 1));
-      miller3.setNoCalls(slice->getMiller(value, 2));
-      miller4.setNoCalls(slice->getMiller(value, 3));
-      miller5.setNoCalls(slice->getMiller(value, 4));
-    });
-
     intMiller.registerChangeCallback([&](float value) {
       if (value) {
-        miller1.setHint("input", -1);
-        miller2.setHint("input", -1);
-        miller3.setHint("input", -1);
-        miller4.setHint("input", -1);
-        miller5.setHint("input", -1);
+        miller0.setHint("format", 0);
+        miller1.setHint("format", 0);
+        miller2.setHint("format", 0);
 
         slice->roundMiller();
 
-        miller1.setNoCalls(slice->getMiller(millerNum.get(), 0));
-        miller2.setNoCalls(slice->getMiller(millerNum.get(), 1));
-        miller3.setNoCalls(slice->getMiller(millerNum.get(), 2));
-        miller4.setNoCalls(slice->getMiller(millerNum.get(), 3));
-        miller5.setNoCalls(slice->getMiller(millerNum.get(), 4));
+        miller0.setNoCalls(slice->getMiller(0));
+        miller1.setNoCalls(slice->getMiller(1));
+        miller2.setNoCalls(slice->getMiller(2));
       } else {
-        miller1.removeHint("input");
-        miller2.removeHint("input");
-        miller3.removeHint("input");
-        miller4.removeHint("input");
-        miller5.removeHint("input");
+        miller0.removeHint("format");
+        miller1.removeHint("format");
+        miller2.removeHint("format");
       }
     });
 
+    miller0.registerChangeCallback(
+        [&](Vec5f &value) { slice->setMiller(value, 0); });
+
     miller1.registerChangeCallback(
-        [&](float value) { slice->setMiller(value, millerNum.get(), 0); });
+        [&](Vec5f &value) { slice->setMiller(value, 1); });
 
     miller2.registerChangeCallback(
-        [&](float value) { slice->setMiller(value, millerNum.get(), 1); });
-
-    miller3.registerChangeCallback(
-        [&](float value) { slice->setMiller(value, millerNum.get(), 2); });
-
-    miller4.registerChangeCallback(
-        [&](float value) { slice->setMiller(value, millerNum.get(), 3); });
-
-    miller5.registerChangeCallback(
-        [&](float value) { slice->setMiller(value, millerNum.get(), 4); });
+        [&](Vec5f &value) { slice->setMiller(value, 2); });
 
     resetUnitCell.registerChangeCallback(
         {[&](bool value) { slice->resetUnitCell(); }});
@@ -410,12 +427,12 @@ public:
     loadPreset.registerChangeCallback(
         [&](float value) { presets.recallPreset(presetName); });
 
-    parameterServer << crystalDim << sliceDim << latticeSize << basisNum
-                    << basis1 << basis2 << basis3 << basis4 << basis5
-                    << resetBasis << showLattice << showSlice << sphereSize
-                    << edgeColor << sliceDepth << edgeThreshold << millerNum
-                    << intMiller << miller1 << miller2 << miller3 << miller4
-                    << miller5 << resetUnitCell;
+    // parameterServer << crystalDim << sliceDim << latticeSize << basisNum
+    //                 << basis1 << basis2 << basis3 << basis4 << basis5
+    //                 << resetBasis << showLattice << showSlice << sphereSize
+    //                 << edgeColor << sliceDepth << edgeThreshold << millerNum
+    //                 << intMiller << miller1 << miller2 << miller3 << miller4
+    //                 << miller5 << resetUnitCell;
 
     // TODO: add basis and miller to preset
     presets << crystalDim << sliceDim << latticeSize << showLattice << showSlice
@@ -432,39 +449,24 @@ public:
     ParameterGUI::draw(&sliceDim);
     ParameterGUI::draw(&latticeSize);
 
-    if (ImGui::CollapsingHeader("Edit Basis Vectort",
-                                ImGuiTreeNodeFlags_CollapsingHeader)) {
-      ImGui::Indent();
-      ParameterGUI::draw(&basisVec0);
-      ParameterGUI::draw(&basisVec1);
-      ParameterGUI::draw(&basisVec2);
-      ParameterGUI::draw(&basisVec3);
-      ParameterGUI::draw(&basisVec4);
-      ImGui::Unindent();
-    }
     if (ImGui::CollapsingHeader("Edit Basis Vector",
                                 ImGuiTreeNodeFlags_CollapsingHeader)) {
-      ImGui::PushStyleColor(ImGuiCol_FrameBg,
-                            (ImVec4)ImColor::HSV(0.15f, 0.5f, 0.3f));
-      ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,
-                            (ImVec4)ImColor::HSV(0.15f, 0.6f, 0.3f));
-      ImGui::PushStyleColor(ImGuiCol_FrameBgActive,
-                            (ImVec4)ImColor::HSV(0.15f, 0.7f, 0.3f));
-      ImGui::PushStyleColor(ImGuiCol_SliderGrab,
-                            (ImVec4)ImColor::HSV(0.15f, 0.9f, 0.5f));
-      ParameterGUI::draw(&basisNum);
-      ImGui::PopStyleColor(4);
-
+      // ImGui::PushStyleColor(ImGuiCol_FrameBg,
+      //                       (ImVec4)ImColor::HSV(0.15f, 0.5f, 0.3f));
+      // ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,
+      //                       (ImVec4)ImColor::HSV(0.15f, 0.6f, 0.3f));
+      // ImGui::PushStyleColor(ImGuiCol_FrameBgActive,
+      //                       (ImVec4)ImColor::HSV(0.15f, 0.7f, 0.3f));
+      // ImGui::PushStyleColor(ImGuiCol_SliderGrab,
+      //                       (ImVec4)ImColor::HSV(0.15f, 0.9f, 0.5f));
+      // ParameterGUI::draw(&basisNum);
+      // ImGui::PopStyleColor(4);
       ImGui::Indent();
+      ParameterGUI::draw(&basis0);
       ParameterGUI::draw(&basis1);
       ParameterGUI::draw(&basis2);
       ParameterGUI::draw(&basis3);
-      if (crystalDim.get() > 3) {
-        ParameterGUI::draw(&basis4);
-        if (crystalDim.get() > 4) {
-          ParameterGUI::draw(&basis5);
-        }
-      }
+      ParameterGUI::draw(&basis4);
       ParameterGUI::draw(&resetBasis);
       ImGui::Unindent();
     }
@@ -486,41 +488,48 @@ public:
       ParameterGUI::draw(&edgeThreshold);
 
       ImGui::NewLine();
+    }
 
-      ImGui::PushStyleColor(ImGuiCol_FrameBg,
-                            (ImVec4)ImColor::HSV(0.15f, 0.5f, 0.3f));
-      ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,
-                            (ImVec4)ImColor::HSV(0.15f, 0.6f, 0.3f));
-      ImGui::PushStyleColor(ImGuiCol_FrameBgActive,
-                            (ImVec4)ImColor::HSV(0.15f, 0.7f, 0.3f));
-      ImGui::PushStyleColor(ImGuiCol_SliderGrab,
-                            (ImVec4)ImColor::HSV(0.15f, 0.9f, 0.5f));
-      ParameterGUI::draw(&millerNum);
-      ImGui::PopStyleColor(4);
+    if (ImGui::CollapsingHeader("Edit Miller Indices",
+                                ImGuiTreeNodeFlags_CollapsingHeader |
+                                    ImGuiTreeNodeFlags_DefaultOpen)) {
+      // ImGui::PushStyleColor(ImGuiCol_FrameBg,
+      //                       (ImVec4)ImColor::HSV(0.15f, 0.5f, 0.3f));
+      // ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,
+      //                       (ImVec4)ImColor::HSV(0.15f, 0.6f, 0.3f));
+      // ImGui::PushStyleColor(ImGuiCol_FrameBgActive,
+      //                       (ImVec4)ImColor::HSV(0.15f, 0.7f, 0.3f));
+      // ImGui::PushStyleColor(ImGuiCol_SliderGrab,
+      //                       (ImVec4)ImColor::HSV(0.15f, 0.9f, 0.5f));
+      // ParameterGUI::draw(&millerNum);
+      // ImGui::PopStyleColor(4);
 
-      ImGui::Indent();
       ParameterGUI::draw(&intMiller);
+      ImGui::Indent();
+      ParameterGUI::draw(&miller0);
       ParameterGUI::draw(&miller1);
       ParameterGUI::draw(&miller2);
-      ParameterGUI::draw(&miller3);
-      if (crystalDim.get() > 3) {
-        ParameterGUI::draw(&miller4);
-        if (crystalDim.get() > 4) {
-          ParameterGUI::draw(&miller5);
-        }
-      }
       ImGui::Unindent();
     }
 
-    ImGui::Text("Hyperplane Basis 0");
-    ImGui::Indent();
-    ImGui::Text("Hyperplane Basis 1");
-    ImGui::Text("Hyperplane Basis 2");
-    ImGui::Text("Hyperplane Basis 3");
-    ImGui::Text("Hyperplane Basis 4");
-    ImGui::Unindent();
+    if (ImGui::CollapsingHeader("Edit Hyperplane Normals",
+                                ImGuiTreeNodeFlags_CollapsingHeader)) {
+      ImGui::Indent();
+      ParameterGUI::draw(&hyperplane0);
+      ParameterGUI::draw(&hyperplane1);
+      ParameterGUI::draw(&hyperplane2);
+      ImGui::Unindent();
+    }
 
-    ParameterGUI::draw(&sliceBasis0);
+    if (ImGui::CollapsingHeader("Edit Slice Basis",
+                                ImGuiTreeNodeFlags_CollapsingHeader)) {
+      ImGui::Indent();
+      ParameterGUI::draw(&sliceBasis0);
+      ParameterGUI::draw(&sliceBasis1);
+      ParameterGUI::draw(&sliceBasis2);
+      ParameterGUI::draw(&sliceBasis3);
+      ImGui::Unindent();
+    }
 
     ParameterGUI::draw(&resetUnitCell);
 
@@ -639,18 +648,11 @@ private:
   ParameterInt sliceDim{"sliceDim", "", 2, 2, 2};
   ParameterInt latticeSize{"latticeSize", "", 1, 1, 15};
 
-  ParameterVec5 basisVec0{"basisVec0", ""};
-  ParameterVec5 basisVec1{"basisVec1", ""};
-  ParameterVec5 basisVec2{"basisVec2", ""};
-  ParameterVec5 basisVec3{"basisVec3", ""};
-  ParameterVec5 basisVec4{"basisVec4", ""};
-
-  ParameterInt basisNum{"basisNum", "", 0, 0, 2};
-  Parameter basis1{"basis1", "", 1, -5, 5};
-  Parameter basis2{"basis2", "", 0, -5, 5};
-  Parameter basis3{"basis3", "", 0, -5, 5};
-  Parameter basis4{"basis4", "", 0, -5, 5};
-  Parameter basis5{"basis5", "", 0, -5, 5};
+  ParameterVec5 basis0{"basis0", ""};
+  ParameterVec5 basis1{"basis1", ""};
+  ParameterVec5 basis2{"basis2", ""};
+  ParameterVec5 basis3{"basis3", ""};
+  ParameterVec5 basis4{"basis4", ""};
   Trigger resetBasis{"resetBasis", ""};
 
   ParameterBool showLattice{"showLattice", "", 0};
@@ -662,15 +664,19 @@ private:
   Parameter sliceDepth{"sliceDepth", "", 0, 0, 1000.f};
   Parameter edgeThreshold{"edgeThreshold", "", 1.1f, 0.f, 2.f};
 
-  ParameterInt millerNum{"millerNum", "", 0, 0, 0};
   ParameterBool intMiller{"intMiller", ""};
-  Parameter miller1{"miller1", "", 1, -5, 5};
-  Parameter miller2{"miller2", "", 0, -5, 5};
-  Parameter miller3{"miller3", "", 0, -5, 5};
-  Parameter miller4{"miller4", "", 0, -5, 5};
-  Parameter miller5{"miller5", "", 0, -5, 5};
+  ParameterVec5 miller0{"miller0", ""};
+  ParameterVec5 miller1{"miller1", ""};
+  ParameterVec5 miller2{"miller2", ""};
+
+  ParameterVec5 hyperplane0{"hyperplane0", ""};
+  ParameterVec5 hyperplane1{"hyperplane1", ""};
+  ParameterVec5 hyperplane2{"hyperplane2", ""};
 
   ParameterVec5 sliceBasis0{"sliceBasis0", ""};
+  ParameterVec5 sliceBasis1{"sliceBasis1", ""};
+  ParameterVec5 sliceBasis2{"sliceBasis2", ""};
+  ParameterVec5 sliceBasis3{"sliceBasis3", ""};
 
   Trigger resetUnitCell{"resetUnitCell", ""};
 

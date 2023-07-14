@@ -33,9 +33,10 @@ struct AbstractSlice {
   virtual void updateNodes() = 0;
   virtual void updatePickables(bool updateNodes) = 0;
 
-  virtual float getMiller(int millerNum, unsigned int index) = 0;
-  virtual void setMiller(float value, int millerNum, unsigned int index) = 0;
+  virtual void setMiller(Vec5f &value, unsigned int millerNum) = 0;
   virtual void roundMiller() = 0;
+  virtual void resetMiller() = 0;
+  virtual Vec5f getMiller(unsigned int millerNum) = 0;
 
   virtual void setDepth(float newDepth) = 0;
   virtual void setThreshold(float newThreshold) = 0;
@@ -184,13 +185,10 @@ template <int N, int M> struct Slice : AbstractSlice {
       int oldSliceDim = oldSlice->sliceDim;
 
       for (int i = 0; i < N - M; ++i) {
-        millerIndices[i] = 0.f;
-
         if (i < oldLatticeDim - oldSliceDim) {
-          for (int j = 0; j < N && j < oldLatticeDim; ++j) {
-            millerIndices[i][j] = oldSlice->getMiller(i, j);
-          }
+          millerIndices[i] = oldSlice->getMiller(i);
         } else {
+          millerIndices[i] = 0.f;
           millerIndices[i][i] = 1.f;
         }
       }
@@ -486,13 +484,13 @@ template <int N, int M> struct Slice : AbstractSlice {
     g.draw(unitCellMesh);
   }
 
-  virtual void setMiller(float value, int millerNum, unsigned int index) {
-    if (millerNum >= N - M || index >= N) {
+  virtual void setMiller(Vec5f &value, unsigned int millerNum) {
+    if (millerNum >= millerIndices.size()) {
       std::cerr << "Error: Miller write index out of bounds" << std::endl;
       return;
     }
 
-    millerIndices[millerNum][index] = value;
+    millerIndices[millerNum] = value;
 
     update();
   }
@@ -507,8 +505,21 @@ template <int N, int M> struct Slice : AbstractSlice {
     update();
   }
 
-  virtual float getMiller(int millerNum, unsigned int index) {
-    return millerIndices[millerNum][index];
+  virtual void resetMiller() {
+    for (int i = 0; i < millerIndices.size(); ++i) {
+      millerIndices[i] = 0.f;
+      millerIndices[i][i] = 1.f;
+    }
+
+    update();
+  }
+
+  virtual Vec5f getMiller(unsigned int millerNum) {
+    if (millerNum >= millerIndices.size()) {
+      std::cerr << "Error: Miller index read out of bounds" << std::endl;
+      return Vec5f();
+    }
+    return Vec5f(millerIndices[millerNum]);
   }
 
   virtual void setDepth(float newDepth) {
@@ -563,7 +574,8 @@ template <int N, int M> struct Slice : AbstractSlice {
           newBasis = lattice->basis[remainingIdx];
           // if (remainingIdx == M) {
           //   newBasis =
-          //       Vec4f(1.f, -0.5f * std::sqrt(2.f), 0.f, 0.5f * std::sqrt(2.f));
+          //       Vec4f(1.f, -0.5f * std::sqrt(2.f), 0.f, 0.5f *
+          //       std::sqrt(2.f));
           // }
           newBasis.normalize();
 
@@ -606,6 +618,7 @@ template <int N, int M> struct Slice : AbstractSlice {
     cornerNodes.clear();
     unitCellNodes.clear();
     unitCellMesh.reset();
+    // TODO: add in color adjustment
   }
 
   // TODO: confine this to unit cell
