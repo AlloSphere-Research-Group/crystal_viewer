@@ -427,17 +427,22 @@ public:
     loadPreset.registerChangeCallback(
         [&](float value) { presets.recallPreset(presetName); });
 
-    // parameterServer << crystalDim << sliceDim << latticeSize << basisNum
-    //                 << basis1 << basis2 << basis3 << basis4 << basis5
-    //                 << resetBasis << showLattice << showSlice << sphereSize
-    //                 << edgeColor << sliceDepth << edgeThreshold << millerNum
-    //                 << intMiller << miller1 << miller2 << miller3 << miller4
-    //                 << miller5 << resetUnitCell;
+    parameterServer << crystalDim << sliceDim << latticeSize
+                    << basis0 << basis1 << basis2 << basis3 << basis4
+                    << resetBasis << showLattice << showSlice << sphereSize
+                    << edgeColor << sliceDepth << edgeThreshold
+                    << intMiller 
+                    << miller0 << miller1 << miller2
+                    << hyperplane0 << hyperplane1 << hyperplane2
+                    << sliceBasis0 << sliceBasis1 << sliceBasis2 << sliceBasis3
+                    << resetUnitCell;
 
-    // TODO: add basis and miller to preset
     presets << crystalDim << sliceDim << latticeSize << showLattice << showSlice
             << sphereSize << edgeColor << sliceDepth << edgeThreshold
-            << intMiller;
+            << intMiller
+            << miller0 << miller1 << miller2
+            << hyperplane0 << hyperplane1 << hyperplane2
+            << sliceBasis0 << sliceBasis1 << sliceBasis2 << sliceBasis3;
 
     return true;
   }
