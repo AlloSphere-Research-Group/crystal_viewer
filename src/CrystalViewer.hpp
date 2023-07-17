@@ -354,15 +354,15 @@ public:
       slice->update();
     });
 
-    basis0.registerChangeCallback([&](Vec5f &value) { setBasis(value, 0); });
+    basis0.registerChangeCallback([&](Vec5f value) { setBasis(value, 0); });
 
-    basis1.registerChangeCallback([&](Vec5f &value) { setBasis(value, 1); });
+    basis1.registerChangeCallback([&](Vec5f value) { setBasis(value, 1); });
 
-    basis2.registerChangeCallback([&](Vec5f &value) { setBasis(value, 2); });
+    basis2.registerChangeCallback([&](Vec5f value) { setBasis(value, 2); });
 
-    basis3.registerChangeCallback([&](Vec5f &value) { setBasis(value, 3); });
+    basis3.registerChangeCallback([&](Vec5f value) { setBasis(value, 3); });
 
-    basis4.registerChangeCallback([&](Vec5f &value) { setBasis(value, 4); });
+    basis4.registerChangeCallback([&](Vec5f value) { setBasis(value, 4); });
 
     resetBasis.registerChangeCallback([&](bool value) {
       basis0.setNoCalls(basis0.getDefault());
@@ -400,13 +400,13 @@ public:
     });
 
     miller0.registerChangeCallback(
-        [&](Vec5f &value) { slice->setMiller(value, 0); });
+        [&](Vec5f value) { slice->setMiller(value, 0); });
 
     miller1.registerChangeCallback(
-        [&](Vec5f &value) { slice->setMiller(value, 1); });
+        [&](Vec5f value) { slice->setMiller(value, 1); });
 
     miller2.registerChangeCallback(
-        [&](Vec5f &value) { slice->setMiller(value, 2); });
+        [&](Vec5f value) { slice->setMiller(value, 2); });
 
     resetUnitCell.registerChangeCallback(
         {[&](bool value) { slice->resetUnitCell(); }});
