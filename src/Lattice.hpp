@@ -18,6 +18,7 @@ using namespace al;
 
 struct AbstractLattice {
   virtual void update() = 0;
+  virtual void pollUpdate() = 0;
 
   virtual void generateLattice(int size = 1) = 0;
 
@@ -36,6 +37,7 @@ struct AbstractLattice {
   int latticeDim;
   int latticeSize{1};
 
+  bool needsUpdate{true};
   std::atomic<bool> dirty{false};
   std::atomic<bool> valid{false};
 
@@ -89,6 +91,13 @@ template <int N> struct Lattice : AbstractLattice {
     }
 
     update();
+  }
+
+  virtual void pollUpdate(){
+    if(needsUpdate){
+      update();
+      needsUpdate = false;
+    }
   }
 
   virtual void update() {

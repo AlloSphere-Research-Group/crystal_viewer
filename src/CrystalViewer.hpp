@@ -135,6 +135,7 @@ public:
       auto newSlice = std::make_shared<Slice<3, 2>>(slice, newLattice);
 
       lattice = newLattice;
+      lattice->latticeSize = latticeSize.get();
       slice = newSlice;
       break;
     }
@@ -148,6 +149,7 @@ public:
         slice = newSlice;
       }
       lattice = newLattice;
+      lattice->latticeSize = latticeSize.get();
       break;
     }
     case 5: {
@@ -160,6 +162,7 @@ public:
         slice = newSlice;
       }
       lattice = newLattice;
+      lattice->latticeSize = latticeSize.get();
       break;
     }
     default:
@@ -169,6 +172,15 @@ public:
   }
 
   void draw(Graphics &g, Nav &nav) {
+
+    if(needsCreate){
+      createCrystal(crystalDim.get(), sliceDim.get());
+      needsCreate = false;
+    }
+    
+    lattice->pollUpdate(); // update if needs update
+    slice->pollUpdate(); // update if needs update
+
     g.depthTesting(false);
     g.blending(true);
     g.blendAdd();
@@ -242,7 +254,8 @@ public:
 
   void setBasis(Vec5f &value, int basisNum) {
     lattice->setBasis(value, basisNum);
-    slice->update();
+    // slice->update();
+    slice->needsUpdate = true;
   }
 
   void setDimensionHints(float value) {
@@ -306,7 +319,7 @@ public:
     }
   }
 
-  bool registerCallbacks(ParameterServer &parameterServer) {
+  bool registerCallbacks(ParameterServer &parameterServer){
     dataDir = File::conformPathToOS(File::currentPath());
 
     // remove bin directory from path
@@ -338,20 +351,24 @@ public:
       setDimensionHints((float)value);
       setHideHints(value, sliceDim.get());
 
-      latticeSize.setNoCalls(latticeSize.getDefault());
-      createCrystal(value, sliceDim.get());
+      // latticeSize.setNoCalls(latticeSize.getDefault());
+      
+      needsCreate = true;
     });
 
     sliceDim.registerChangeCallback([&](int value) {
       setHideHints(crystalDim.get(), value);
 
-      latticeSize.setNoCalls(latticeSize.getDefault());
-      createCrystal(crystalDim.get(), value);
+      // latticeSize.setNoCalls(latticeSize.getDefault());
+      
+      needsCreate = true;
     });
 
     latticeSize.registerChangeCallback([&](int value) {
-      lattice->generateLattice(value);
-      slice->update();
+      // lattice->generateLattice(value);
+      lattice->latticeSize = value;
+      lattice->needsUpdate = true;
+      slice->needsUpdate = true;
     });
 
     basis0.registerChangeCallback([&](Vec5f value) { setBasis(value, 0); });
@@ -372,7 +389,8 @@ public:
       basis4.setNoCalls(basis4.getDefault());
       lattice->resetBasis();
 
-      slice->update();
+      // slice->update();
+      slice->needsUpdate = true;
     });
 
     sliceDepth.registerChangeCallback(
@@ -444,6 +462,13 @@ public:
             << hyperplane0 << hyperplane1 << hyperplane2
             << sliceBasis0 << sliceBasis1 << sliceBasis2 << sliceBasis3;
 
+    return true;
+  }
+
+  static bool PresetMapToTextList(void* data, int n, const char** out_text){
+    const std::map<int, std::string>* m = (std::map<int,std::string>*)data;
+    if(m->find(n) == m->end()) *out_text = "";
+    else *out_text = m->at(n).c_str();
     return true;
   }
 
@@ -557,17 +582,29 @@ public:
     ImGui::SameLine();
     ParameterGUI::draw(&exportJson);
 
-    // ImGui::InputText("preset", presetName, IM_ARRAYSIZE(presetName));
-    // if (ImGui::IsItemActive()) {
-    //   navControl.active(false);
-    // } else {
-    //   navControl.active(true);
-    // }
+    if (ImGui::CollapsingHeader("Presets",
+                                ImGuiTreeNodeFlags_CollapsingHeader)) {
+      ImGui::Indent();
 
-    // TODO: fix this
-    // ParameterGUI::draw(&savePreset);
-    // ImGui::SameLine();
-    // ParameterGUI::draw(&loadPreset);
+      std::map<int, std::string> savedPresets = presets.availablePresets();
+      static int itemCurrent = 1;
+      int lastItem = itemCurrent;
+      ImGui::ListBox("presets", &itemCurrent, PresetMapToTextList, (void*)&savedPresets, savedPresets.size());
+      
+      if(lastItem != itemCurrent && savedPresets.find(itemCurrent) != savedPresets.end())
+        strcpy(presetName, savedPresets.at(itemCurrent).c_str());
+
+      ImGui::InputText("preset name", presetName, IM_ARRAYSIZE(presetName));
+      if (ImGui::IsItemActive()) {
+        navControl.active(false);
+      } else {
+        navControl.active(true);
+      }
+      ParameterGUI::draw(&savePreset);
+      ImGui::SameLine();
+      ParameterGUI::draw(&loadPreset);
+      ImGui::Unindent();
+    }
 
     ImGui::End();
   }
@@ -647,7 +684,9 @@ private:
       latticeEdgeEnds;
   BufferObject sliceVertices, sliceColors, sliceEdgeStarts, sliceEdgeEnds;
 
-  PresetHandler presets{"presets", true};
+  PresetHandler presets{"data/presets", true};
+
+  bool needsCreate{false};
 
   ParameterInt crystalDim{"crystalDim", "", 3, 3, 5};
   ParameterInt sliceDim{"sliceDim", "", 2, 2, 2};
@@ -666,7 +705,7 @@ private:
   Parameter sphereSize{"sphereSize", "", 0.04, 0.001, 1};
   ParameterColor edgeColor{"edgeColor", "", Color(1.f, 0.3f)};
 
-  Parameter sliceDepth{"sliceDepth", "", 0, 0, 1000.f};
+  Parameter sliceDepth{"sliceDepth", "", 1.0f, 0, 1000.f};
   Parameter edgeThreshold{"edgeThreshold", "", 1.1f, 0.f, 2.f};
 
   ParameterBool intMiller{"intMiller", ""};

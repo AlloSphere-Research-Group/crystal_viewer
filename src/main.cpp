@@ -14,6 +14,9 @@ struct State {
 struct CrystalApp : DistributedAppWithState<State> {
   CrystalViewer viewer;
 
+  // PresetHandler presets{"data/presets"};
+  // PresetServer presetServer{"127.0.0.1", 9012};
+
   void onCreate() override {
     lens().near(0.1).far(100).fovy(45);
     nav().pos(0, 0, 4);
@@ -23,7 +26,7 @@ struct CrystalApp : DistributedAppWithState<State> {
       quit();
     }
 
-    if (!viewer.registerCallbacks(parameterServer())) {
+    if (!viewer.registerCallbacks(parameterServer())){ 
       std::cerr << "Error setting up parameters" << std::endl;
       quit();
     }
@@ -36,9 +39,7 @@ struct CrystalApp : DistributedAppWithState<State> {
   void onAnimate(double dt) override {
     if (hasCapability(Capability::CAP_2DGUI)) {
       imguiBeginFrame();
-
       viewer.setGUIFrame(navControl());
-
       imguiEndFrame();
     }
 
@@ -86,6 +87,25 @@ struct CrystalApp : DistributedAppWithState<State> {
 
   bool onMouseUp(const Mouse &m) override {
     viewer.slice->pickableManager.onMouseUp(graphics(), m, width(), height());
+    return true;
+  }
+
+
+  bool onKeyDown(const Keyboard &k) override {
+    // if (k.alt()) {
+    //   switch (k.key()) {
+    //     case '1':
+    //       presets.storePreset("preset1");
+    //       std::cout << "Preset 1 stored." << std::endl;
+    //       break;
+    // } else if(k.shift()){
+    //   switch (k.key()) {
+    //     case '1':
+    //       presets.recallPreset("preset1");
+    //       std::cout << "Preset 1 loaded." << std::endl;
+    //       break;
+    //   }
+    // }
     return true;
   }
 

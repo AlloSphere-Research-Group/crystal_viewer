@@ -29,6 +29,7 @@ using namespace al;
 
 struct AbstractSlice {
   virtual void update() = 0;
+  virtual void pollUpdate() = 0;
 
   virtual void updateNodes() = 0;
   virtual void updatePickables(bool updateNodes) = 0;
@@ -59,12 +60,13 @@ struct AbstractSlice {
   int latticeDim;
   int sliceDim;
 
-  float sliceDepth{0.f};
+  float sliceDepth{1.0f};
   float edgeThreshold{1.1f};
 
   PickableManager pickableManager;
   VAOMesh box;
 
+  bool needsUpdate{true};
   std::atomic<bool> dirty{false};
   std::atomic<bool> valid{false};
 
@@ -200,6 +202,13 @@ template <int N, int M> struct Slice : AbstractSlice {
     update();
   }
 
+  virtual void pollUpdate(){
+    if(needsUpdate){
+      update();
+      needsUpdate = false;
+    }
+  }
+  
   virtual void update() {
     dirty = true;
 
@@ -492,7 +501,8 @@ template <int N, int M> struct Slice : AbstractSlice {
 
     millerIndices[millerNum] = value;
 
-    update();
+    needsUpdate = true;
+    // update();
   }
 
   virtual void roundMiller() {
@@ -501,8 +511,8 @@ template <int N, int M> struct Slice : AbstractSlice {
         v = std::round(v);
       }
     }
-
-    update();
+    needsUpdate = true;
+    // update();
   }
 
   virtual void resetMiller() {
@@ -511,7 +521,8 @@ template <int N, int M> struct Slice : AbstractSlice {
       millerIndices[i][i] = 1.f;
     }
 
-    update();
+    needsUpdate = true;
+    // update();
   }
 
   virtual Vec5f getMiller(unsigned int millerNum) {
@@ -524,12 +535,14 @@ template <int N, int M> struct Slice : AbstractSlice {
 
   virtual void setDepth(float newDepth) {
     sliceDepth = newDepth;
-    update();
+    needsUpdate = true;
+    // update();
   }
 
   virtual void setThreshold(float newThreshold) {
     edgeThreshold = newThreshold;
-    update();
+    needsUpdate = true;
+    // update();
   }
 
   Vec<M, float> project(Vec<N, float> &point) {
