@@ -26,7 +26,7 @@ struct CrystalApp : DistributedAppWithState<State> {
       quit();
     }
 
-    if (!viewer.registerCallbacks(parameterServer())){ 
+    if (!viewer.registerCallbacks(parameterServer())) {
       std::cerr << "Error setting up parameters" << std::endl;
       quit();
     }
@@ -89,7 +89,6 @@ struct CrystalApp : DistributedAppWithState<State> {
     viewer.slice->pickableManager.onMouseUp(graphics(), m, width(), height());
     return true;
   }
-
 
   bool onKeyDown(const Keyboard &k) override {
     // if (k.alt()) {

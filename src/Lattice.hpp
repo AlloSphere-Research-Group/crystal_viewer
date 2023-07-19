@@ -93,8 +93,8 @@ template <int N> struct Lattice : AbstractLattice {
     update();
   }
 
-  virtual void pollUpdate(){
-    if(needsUpdate){
+  virtual void pollUpdate() {
+    if (needsUpdate) {
       update();
       needsUpdate = false;
     }
@@ -192,7 +192,7 @@ template <int N> struct Lattice : AbstractLattice {
     }
     basis[basisNum] = value;
 
-    update();
+    needsUpdate = true;
   }
 
   virtual void resetBasis() {
@@ -201,7 +201,7 @@ template <int N> struct Lattice : AbstractLattice {
       basis[i][i] = 1.f;
     }
 
-    update();
+    needsUpdate = true;
   }
 
   virtual Vec5f getBasis(unsigned int basisNum) {

@@ -1,12 +1,12 @@
 ::test
-/crystalDim i 4 
+/crystalDim i 3 
 /edgeColor ffff 1.000000 1.000000 1.000000 0.300000 
 /edgeThreshold f 1.100000 
 /hyperplane0 fffff 0.000000 0.000000 0.000000 0.000000 0.000000 
 /hyperplane1 fffff 0.000000 0.000000 0.000000 0.000000 0.000000 
 /hyperplane2 fffff 0.000000 0.000000 0.000000 0.000000 0.000000 
 /intMiller i 0 
-/latticeSize i 3 
+/latticeSize i 1 
 /miller0 fffff 0.000000 0.000000 0.000000 0.000000 0.000000 
 /miller1 fffff 0.000000 0.000000 0.000000 0.000000 0.000000 
 /miller2 fffff 0.000000 0.000000 0.000000 0.000000 0.000000 
@@ -17,6 +17,6 @@
 /sliceBasis2 fffff 0.000000 0.000000 0.000000 0.000000 0.000000 
 /sliceBasis3 fffff 0.000000 0.000000 0.000000 0.000000 0.000000 
 /sliceDepth f 1.000000 
-/sliceDim i 3 
+/sliceDim i 2 
 /sphereSize f 0.040000 
 ::

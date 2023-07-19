@@ -4,3 +4,14 @@ add in a way to adjust basis for subspace
 
 add in the TINC interface to make data visible from TINC python client
 protobuf 4.2
+
+  Parameter sliceDepth{"sliceDepth", "", 0, 0, 1000.f};
+  Parameter edgeThreshold{"edgeThreshold", "", 1.1f, 0.f, 2.f};
+
+  ParameterInt millerNum{"millerNum", "", 0, 0, 0};
+  ParameterBool intMiller{"intMiller", ""};
+  Parameter miller1{"miller1", "", 1, -5, 5};
+  Parameter miller2{"miller2", "", 0, -5, 5};
+  Parameter miller3{"miller3", "", 0, -5, 5};
+  Parameter miller4{"miller4", "", 0, -5, 5};
+  Parameter miller5{"miller5", "", 0, -5, 5};

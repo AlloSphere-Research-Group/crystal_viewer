@@ -29,7 +29,7 @@ using namespace al;
 
 struct AbstractSlice {
   virtual void update() = 0;
-  virtual void pollUpdate() = 0;
+  virtual bool pollUpdate() = 0;
 
   virtual void updateNodes() = 0;
   virtual void updatePickables(bool updateNodes) = 0;
@@ -38,6 +38,10 @@ struct AbstractSlice {
   virtual void roundMiller() = 0;
   virtual void resetMiller() = 0;
   virtual Vec5f getMiller(unsigned int millerNum) = 0;
+  virtual void setNormal(Vec5f &value, unsigned int normalNum) = 0;
+  virtual Vec5f getNormal(unsigned int normalNum) = 0;
+  virtual void setSliceBasis(Vec5f &value, unsigned int sliceBasisNum) = 0;
+  virtual Vec5f getSliceBasis(unsigned int sliceBasisNum) = 0;
 
   virtual void setDepth(float newDepth) = 0;
   virtual void setThreshold(float newThreshold) = 0;
@@ -202,13 +206,15 @@ template <int N, int M> struct Slice : AbstractSlice {
     update();
   }
 
-  virtual void pollUpdate(){
-    if(needsUpdate){
+  virtual bool pollUpdate() {
+    if (needsUpdate) {
       update();
       needsUpdate = false;
+      return true;
     }
+    return false;
   }
-  
+
   virtual void update() {
     dirty = true;
 
@@ -495,14 +501,14 @@ template <int N, int M> struct Slice : AbstractSlice {
 
   virtual void setMiller(Vec5f &value, unsigned int millerNum) {
     if (millerNum >= millerIndices.size()) {
-      std::cerr << "Error: Miller write index out of bounds" << std::endl;
+      std::cerr << "Error: Miller write index out of bounds(" << millerNum
+                << ")" << std::endl;
       return;
     }
 
     millerIndices[millerNum] = value;
 
     needsUpdate = true;
-    // update();
   }
 
   virtual void roundMiller() {
@@ -512,7 +518,6 @@ template <int N, int M> struct Slice : AbstractSlice {
       }
     }
     needsUpdate = true;
-    // update();
   }
 
   virtual void resetMiller() {
@@ -522,7 +527,6 @@ template <int N, int M> struct Slice : AbstractSlice {
     }
 
     needsUpdate = true;
-    // update();
   }
 
   virtual Vec5f getMiller(unsigned int millerNum) {
@@ -533,16 +537,56 @@ template <int N, int M> struct Slice : AbstractSlice {
     return Vec5f(millerIndices[millerNum]);
   }
 
+  virtual void setNormal(Vec5f &value, unsigned int normalNum) {
+    if (normalNum >= normals.size()) {
+      std::cerr << "Error: Normal write out of bounds(" << normalNum << ")"
+                << std::endl;
+      return;
+    }
+
+    normals[normalNum] = value;
+
+    // TODO: add in additional flags to control update
+    // needsUpdate = true;
+  }
+
+  virtual Vec5f getNormal(unsigned int normalNum) {
+    if (normalNum >= normals.size()) {
+      std::cerr << "Error: Normal read out of bounds" << std::endl;
+      return Vec5f();
+    }
+    return Vec5f(normals[normalNum]);
+  }
+
+  virtual void setSliceBasis(Vec5f &value, unsigned int sliceBasisNum) {
+    if (sliceBasisNum >= sliceBasis.size()) {
+      std::cerr << "Error: Slice Basis write out of bounds(" << sliceBasisNum
+                << ")" << std::endl;
+      return;
+    }
+
+    sliceBasis[sliceBasisNum] = value;
+
+    // TODO: add in additional flags to control update
+    // needsUpdate = true;
+  }
+
+  virtual Vec5f getSliceBasis(unsigned int sliceBasisNum) {
+    if (sliceBasisNum >= sliceBasis.size()) {
+      std::cerr << "Error: Slice Basis read out of bounds" << std::endl;
+      return Vec5f();
+    }
+    return Vec5f(sliceBasis[sliceBasisNum]);
+  }
+
   virtual void setDepth(float newDepth) {
     sliceDepth = newDepth;
     needsUpdate = true;
-    // update();
   }
 
   virtual void setThreshold(float newThreshold) {
     edgeThreshold = newThreshold;
     needsUpdate = true;
-    // update();
   }
 
   Vec<M, float> project(Vec<N, float> &point) {

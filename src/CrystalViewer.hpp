@@ -173,13 +173,15 @@ public:
 
   void draw(Graphics &g, Nav &nav) {
 
-    if(needsCreate){
+    if (needsCreate) {
       createCrystal(crystalDim.get(), sliceDim.get());
       needsCreate = false;
     }
-    
-    lattice->pollUpdate(); // update if needs update
-    slice->pollUpdate(); // update if needs update
+
+    lattice->pollUpdate();     // update if needs update
+    if (slice->pollUpdate()) { // update if needs update
+      updateSliceBasis();
+    }
 
     g.depthTesting(false);
     g.blending(true);
@@ -254,8 +256,21 @@ public:
 
   void setBasis(Vec5f &value, int basisNum) {
     lattice->setBasis(value, basisNum);
-    // slice->update();
     slice->needsUpdate = true;
+  }
+
+  void updateSliceBasis() {
+    // TODO: remove dimension check
+    miller0.setNoCalls(slice->getMiller(0));
+    miller1.setNoCalls(slice->getMiller(1));
+    miller2.setNoCalls(slice->getMiller(2));
+    hyperplane0.setNoCalls(slice->getNormal(0));
+    hyperplane1.setNoCalls(slice->getNormal(1));
+    hyperplane2.setNoCalls(slice->getNormal(2));
+    sliceBasis0.setNoCalls(slice->getSliceBasis(0));
+    sliceBasis1.setNoCalls(slice->getSliceBasis(1));
+    sliceBasis2.setNoCalls(slice->getSliceBasis(2));
+    sliceBasis3.setNoCalls(slice->getSliceBasis(3));
   }
 
   void setDimensionHints(float value) {
@@ -319,14 +334,17 @@ public:
     }
   }
 
-  bool registerCallbacks(ParameterServer &parameterServer){
+  bool registerCallbacks(ParameterServer &parameterServer) {
     dataDir = File::conformPathToOS(File::currentPath());
 
-    // remove bin directory from path
+    // remove bin directory from path if it exists
     auto posBin = dataDir.find("bin");
     dataDir = dataDir.substr(0, posBin);
+
+    // get path to data folder
     dataDir = File::conformPathToOS(dataDir + "data/");
 
+    // if it doesn't exist create data folder
     if (!al::File::exists(dataDir)) {
       if (!al::Dir::make(dataDir)) {
         std::cerr << "Unable to create directory: " << dataDir << std::endl;
@@ -334,6 +352,7 @@ public:
       }
     }
 
+    // copy path to char array filepath
     dataDir.copy(filePath, sizeof filePath - 1);
 
     edgeColor.setHint("showAlpha", true);
@@ -351,21 +370,16 @@ public:
       setDimensionHints((float)value);
       setHideHints(value, sliceDim.get());
 
-      // latticeSize.setNoCalls(latticeSize.getDefault());
-      
       needsCreate = true;
     });
 
     sliceDim.registerChangeCallback([&](int value) {
       setHideHints(crystalDim.get(), value);
 
-      // latticeSize.setNoCalls(latticeSize.getDefault());
-      
       needsCreate = true;
     });
 
     latticeSize.registerChangeCallback([&](int value) {
-      // lattice->generateLattice(value);
       lattice->latticeSize = value;
       lattice->needsUpdate = true;
       slice->needsUpdate = true;
@@ -389,7 +403,6 @@ public:
       basis4.setNoCalls(basis4.getDefault());
       lattice->resetBasis();
 
-      // slice->update();
       slice->needsUpdate = true;
     });
 
@@ -419,13 +432,28 @@ public:
 
     miller0.registerChangeCallback(
         [&](Vec5f value) { slice->setMiller(value, 0); });
-
     miller1.registerChangeCallback(
         [&](Vec5f value) { slice->setMiller(value, 1); });
-
     miller2.registerChangeCallback(
         [&](Vec5f value) { slice->setMiller(value, 2); });
 
+    hyperplane0.registerChangeCallback(
+        [&](Vec5f value) { slice->setNormal(value, 0); });
+    hyperplane1.registerChangeCallback(
+        [&](Vec5f value) { slice->setNormal(value, 1); });
+    hyperplane2.registerChangeCallback(
+        [&](Vec5f value) { slice->setNormal(value, 2); });
+
+    sliceBasis0.registerChangeCallback(
+        [&](Vec5f value) { slice->setSliceBasis(value, 0); });
+    sliceBasis1.registerChangeCallback(
+        [&](Vec5f value) { slice->setSliceBasis(value, 1); });
+    sliceBasis2.registerChangeCallback(
+        [&](Vec5f value) { slice->setSliceBasis(value, 2); });
+    sliceBasis3.registerChangeCallback(
+        [&](Vec5f value) { slice->setSliceBasis(value, 3); });
+
+    // Triggers
     resetUnitCell.registerChangeCallback(
         {[&](bool value) { slice->resetUnitCell(); }});
 
@@ -445,30 +473,30 @@ public:
     loadPreset.registerChangeCallback(
         [&](float value) { presets.recallPreset(presetName); });
 
-    parameterServer << crystalDim << sliceDim << latticeSize
-                    << basis0 << basis1 << basis2 << basis3 << basis4
-                    << resetBasis << showLattice << showSlice << sphereSize
-                    << edgeColor << sliceDepth << edgeThreshold
-                    << intMiller 
-                    << miller0 << miller1 << miller2
-                    << hyperplane0 << hyperplane1 << hyperplane2
+    parameterServer << crystalDim << sliceDim << latticeSize << basis0 << basis1
+                    << basis2 << basis3 << basis4 << resetBasis << showLattice
+                    << showSlice << sphereSize << edgeColor << sliceDepth
+                    << edgeThreshold << intMiller << miller0 << miller1
+                    << miller2 << hyperplane0 << hyperplane1 << hyperplane2
                     << sliceBasis0 << sliceBasis1 << sliceBasis2 << sliceBasis3
                     << resetUnitCell;
 
+    // TODO: update apparently happens multiple times on load
     presets << crystalDim << sliceDim << latticeSize << showLattice << showSlice
             << sphereSize << edgeColor << sliceDepth << edgeThreshold
-            << intMiller
-            << miller0 << miller1 << miller2
-            << hyperplane0 << hyperplane1 << hyperplane2
-            << sliceBasis0 << sliceBasis1 << sliceBasis2 << sliceBasis3;
+            << intMiller << miller0 << miller1 << miller2 << hyperplane0
+            << hyperplane1 << hyperplane2 << sliceBasis0 << sliceBasis1
+            << sliceBasis2 << sliceBasis3;
 
     return true;
   }
 
-  static bool PresetMapToTextList(void* data, int n, const char** out_text){
-    const std::map<int, std::string>* m = (std::map<int,std::string>*)data;
-    if(m->find(n) == m->end()) *out_text = "";
-    else *out_text = m->at(n).c_str();
+  static bool PresetMapToTextList(void *data, int n, const char **out_text) {
+    const std::map<int, std::string> *m = (std::map<int, std::string> *)data;
+    if (m->find(n) == m->end())
+      *out_text = "";
+    else
+      *out_text = m->at(n).c_str();
     return true;
   }
 
@@ -589,9 +617,11 @@ public:
       std::map<int, std::string> savedPresets = presets.availablePresets();
       static int itemCurrent = 1;
       int lastItem = itemCurrent;
-      ImGui::ListBox("presets", &itemCurrent, PresetMapToTextList, (void*)&savedPresets, savedPresets.size());
-      
-      if(lastItem != itemCurrent && savedPresets.find(itemCurrent) != savedPresets.end())
+      ImGui::ListBox("presets", &itemCurrent, PresetMapToTextList,
+                     (void *)&savedPresets, savedPresets.size());
+
+      if (lastItem != itemCurrent &&
+          savedPresets.find(itemCurrent) != savedPresets.end())
         strcpy(presetName, savedPresets.at(itemCurrent).c_str());
 
       ImGui::InputText("preset name", presetName, IM_ARRAYSIZE(presetName));
@@ -692,11 +722,12 @@ private:
   ParameterInt sliceDim{"sliceDim", "", 2, 2, 2};
   ParameterInt latticeSize{"latticeSize", "", 1, 1, 15};
 
-  ParameterVec5 basis0{"basis0", ""};
-  ParameterVec5 basis1{"basis1", ""};
-  ParameterVec5 basis2{"basis2", ""};
-  ParameterVec5 basis3{"basis3", ""};
-  ParameterVec5 basis4{"basis4", ""};
+  // TODO: add min/max control?
+  ParameterVec5 basis0{"basis0", "", Vec5f(1.f, 0.f, 0.f, 0.f, 0.f)};
+  ParameterVec5 basis1{"basis1", "", Vec5f(0.f, 1.f, 0.f, 0.f, 0.f)};
+  ParameterVec5 basis2{"basis2", "", Vec5f(0.f, 0.f, 1.f, 0.f, 0.f)};
+  ParameterVec5 basis3{"basis3", "", Vec5f(0.f, 0.f, 0.f, 1.f, 0.f)};
+  ParameterVec5 basis4{"basis4", "", Vec5f(0.f, 0.f, 0.f, 0.f, 1.f)};
   Trigger resetBasis{"resetBasis", ""};
 
   ParameterBool showLattice{"showLattice", "", 0};
@@ -709,18 +740,18 @@ private:
   Parameter edgeThreshold{"edgeThreshold", "", 1.1f, 0.f, 2.f};
 
   ParameterBool intMiller{"intMiller", ""};
-  ParameterVec5 miller0{"miller0", ""};
-  ParameterVec5 miller1{"miller1", ""};
-  ParameterVec5 miller2{"miller2", ""};
+  ParameterVec5 miller0{"miller0", "", Vec5f(1.f, 0.f, 0.f, 0.f, 0.f)};
+  ParameterVec5 miller1{"miller1", "", Vec5f(0.f, 1.f, 0.f, 0.f, 0.f)};
+  ParameterVec5 miller2{"miller2", "", Vec5f(0.f, 0.f, 1.f, 0.f, 0.f)};
 
-  ParameterVec5 hyperplane0{"hyperplane0", ""};
-  ParameterVec5 hyperplane1{"hyperplane1", ""};
-  ParameterVec5 hyperplane2{"hyperplane2", ""};
+  ParameterVec5 hyperplane0{"hyperplane0", "", Vec5f(1.f, 0.f, 0.f, 0.f, 0.f)};
+  ParameterVec5 hyperplane1{"hyperplane1", "", Vec5f(0.f, 1.f, 0.f, 0.f, 0.f)};
+  ParameterVec5 hyperplane2{"hyperplane2", "", Vec5f(0.f, 0.f, 1.f, 0.f, 0.f)};
 
-  ParameterVec5 sliceBasis0{"sliceBasis0", ""};
-  ParameterVec5 sliceBasis1{"sliceBasis1", ""};
-  ParameterVec5 sliceBasis2{"sliceBasis2", ""};
-  ParameterVec5 sliceBasis3{"sliceBasis3", ""};
+  ParameterVec5 sliceBasis0{"sliceBasis0", "", Vec5f(0.f, 0.f, 0.f, 0.f, 0.f)};
+  ParameterVec5 sliceBasis1{"sliceBasis1", "", Vec5f(0.f, 0.f, 0.f, 0.f, 0.f)};
+  ParameterVec5 sliceBasis2{"sliceBasis2", "", Vec5f(0.f, 0.f, 0.f, 0.f, 0.f)};
+  ParameterVec5 sliceBasis3{"sliceBasis3", "", Vec5f(0.f, 0.f, 0.f, 0.f, 0.f)};
 
   Trigger resetUnitCell{"resetUnitCell", ""};
 
