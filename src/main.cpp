@@ -74,7 +74,7 @@ struct CrystalApp : DistributedAppWithState<State> {
     if (!ImGui::IsAnyWindowHovered()) {
       viewer.slice->pickableManager.onMouseDown(graphics(), m, width(),
                                                 height());
-      viewer.slice->updatePickables(m.right());
+      viewer.updatePickables(m.right());
     }
     return true;
   }

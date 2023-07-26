@@ -254,6 +254,10 @@ public:
                           slice->getEdgeNum());
   }
 
+  void updatePickables(bool updateNodes) {
+    slice->updatePickables(nodeInfo, updateNodes);
+  }
+
   void setBasis(Vec5f &value, int basisNum) {
     lattice->setBasis(value, basisNum);
     slice->needsUpdate = true;
@@ -636,6 +640,10 @@ public:
       ImGui::Unindent();
     }
 
+    for (auto &info : nodeInfo) {
+      ImGui::Text(info.c_str());
+    }
+
     ImGui::End();
   }
 
@@ -764,6 +772,8 @@ private:
   char presetName[128]{};
   Trigger savePreset{"savePreset", ""};
   Trigger loadPreset{"loadPreset", ""};
+
+  std::array<std::string, 4> nodeInfo;
 };
 
 #endif // CRYSTAL_VIEWER_HPP

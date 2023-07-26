@@ -32,7 +32,8 @@ struct AbstractSlice {
   virtual bool pollUpdate() = 0;
 
   virtual void updateNodes() = 0;
-  virtual void updatePickables(bool updateNodes) = 0;
+  virtual void updatePickables(std::array<std::string, 4> &info,
+                               bool updateNodes) = 0;
 
   virtual void setMiller(Vec5f &value, unsigned int millerNum) = 0;
   virtual void roundMiller() = 0;
@@ -146,7 +147,9 @@ template <int N, int M> struct Slice : AbstractSlice {
 
   std::array<Vec<N, float>, N - M> millerIndices;
   std::array<Vec<N, float>, N - M> normals;
+  std::array<bool, N - M> isManualNormal;
   std::array<Vec<N, float>, M> sliceBasis;
+  std::array<bool, M> isManualSliceBasis;
 
   std::vector<Vec3f> projectedVertices;
 
@@ -355,18 +358,23 @@ template <int N, int M> struct Slice : AbstractSlice {
     }
   }
 
-  virtual void updatePickables(bool updateNodes) {
+  virtual void updatePickables(std::array<std::string, 4> &info,
+                               bool updateNodes) {
     for (auto &node : nodes) {
       auto &pickable = node.pickable;
 
       if (pickable.selected.get() && pickable.hover.get()) {
         if (!updateNodes) {
+          info[0] = "Node: " + std::to_string(node.id);
+          info[1] = " overlap: " + std::to_string(node.overlap);
+          info[2] = " env: " + std::to_string(node.environment);
+          info[3] = " neighbours: " + std::to_string(node.neighbours.size());
           // TODO: output this to UI
-          std::cout << "Node: " << node.id << std::endl;
-          std::cout << " overlap: " << node.overlap << std::endl;
-          std::cout << " env: " << node.environment << std::endl;
-          std::cout << " neighbours: " << node.neighbours.size() << std::endl;
-          // for (auto &n : node.neighbours) {
+          // std::cout << "Node: " << node.id << std::endl;
+          // std::cout << " overlap: " << node.overlap << std::endl;
+          // std::cout << " env: " << node.environment << std::endl;
+          // std::cout << " neighbours: " << node.neighbours.size() <<
+          // std::endl; for (auto &n : node.neighbours) {
           //   std::cout << "  " << n.first << ": " << n.second << std::endl;
           // }
           return;
@@ -525,7 +533,6 @@ template <int N, int M> struct Slice : AbstractSlice {
       millerIndices[i] = 0.f;
       millerIndices[i][i] = 1.f;
     }
-
     needsUpdate = true;
   }
 
@@ -547,6 +554,7 @@ template <int N, int M> struct Slice : AbstractSlice {
     normals[normalNum] = value;
 
     // TODO: add in additional flags to control update
+    isManualNormal[normalNum] = true;
     // needsUpdate = true;
   }
 
@@ -568,6 +576,7 @@ template <int N, int M> struct Slice : AbstractSlice {
     sliceBasis[sliceBasisNum] = value;
 
     // TODO: add in additional flags to control update
+    isManualSliceBasis[sliceBasisNum] = true;
     // needsUpdate = true;
   }
 
@@ -665,6 +674,14 @@ template <int N, int M> struct Slice : AbstractSlice {
       }
 
       newBasis.normalize();
+    }
+
+    for (auto &m : isManualNormal) {
+      m = false;
+    }
+
+    for (auto &m : isManualSliceBasis) {
+      m = false;
     }
   }
 
