@@ -1,17 +1,13 @@
+see if we can add in unitcell to the presets
+
+When unit cell is calculated, report angles
+Additional ways to identify
+
+
 add origin point to list, remove any interior points with 1 in their fract coord.
 
-add in a way to adjust basis for subspace
+Performance upgrade
 
+add in a way to adjust basis for subspace
 add in the TINC interface to make data visible from TINC python client
 protobuf 4.2
-
-  Parameter sliceDepth{"sliceDepth", "", 0, 0, 1000.f};
-  Parameter edgeThreshold{"edgeThreshold", "", 1.1f, 0.f, 2.f};
-
-  ParameterInt millerNum{"millerNum", "", 0, 0, 0};
-  ParameterBool intMiller{"intMiller", ""};
-  Parameter miller1{"miller1", "", 1, -5, 5};
-  Parameter miller2{"miller2", "", 0, -5, 5};
-  Parameter miller3{"miller3", "", 0, -5, 5};
-  Parameter miller4{"miller4", "", 0, -5, 5};
-  Parameter miller5{"miller5", "", 0, -5, 5};

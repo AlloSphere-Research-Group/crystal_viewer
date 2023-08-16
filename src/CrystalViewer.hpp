@@ -255,7 +255,7 @@ public:
   }
 
   void updatePickables(bool updateNodes) {
-    slice->updatePickables(nodeInfo, updateNodes);
+    slice->updatePickables(nodeInfo, unitCellInfo, updateNodes);
   }
 
   void setBasis(Vec5f &value, int basisNum) {
@@ -644,6 +644,10 @@ public:
       ImGui::Text(info.c_str());
     }
 
+    for (auto &info : unitCellInfo) {
+      ImGui::Text(info.c_str());
+    }
+
     ImGui::End();
   }
 
@@ -774,6 +778,7 @@ private:
   Trigger loadPreset{"loadPreset", ""};
 
   std::array<std::string, 4> nodeInfo;
+  std::array<std::string, 5> unitCellInfo;
 };
 
 #endif // CRYSTAL_VIEWER_HPP

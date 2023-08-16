@@ -32,7 +32,8 @@ struct AbstractSlice {
   virtual bool pollUpdate() = 0;
 
   virtual void updateNodes() = 0;
-  virtual void updatePickables(std::array<std::string, 4> &info,
+  virtual void updatePickables(std::array<std::string, 4> &nodeInfo,
+                               std::array<std::string, 5> &unitCellInfo,
                                bool updateNodes) = 0;
 
   virtual void setMiller(Vec5f &value, unsigned int millerNum) = 0;
@@ -358,17 +359,19 @@ template <int N, int M> struct Slice : AbstractSlice {
     }
   }
 
-  virtual void updatePickables(std::array<std::string, 4> &info,
+  virtual void updatePickables(std::array<std::string, 4> &nodeInfo,
+                               std::array<std::string, 5> &unitCellInfo,
                                bool updateNodes) {
     for (auto &node : nodes) {
       auto &pickable = node.pickable;
 
       if (pickable.selected.get() && pickable.hover.get()) {
         if (!updateNodes) {
-          info[0] = "Node: " + std::to_string(node.id);
-          info[1] = " overlap: " + std::to_string(node.overlap);
-          info[2] = " env: " + std::to_string(node.environment);
-          info[3] = " neighbours: " + std::to_string(node.neighbours.size());
+          nodeInfo[0] = "Node: " + std::to_string(node.id);
+          nodeInfo[1] = " overlap: " + std::to_string(node.overlap);
+          nodeInfo[2] = " env: " + std::to_string(node.environment);
+          nodeInfo[3] =
+              " neighbours: " + std::to_string(node.neighbours.size());
           // TODO: output this to UI
           // std::cout << "Node: " << node.id << std::endl;
           // std::cout << " overlap: " << node.overlap << std::endl;
@@ -395,6 +398,9 @@ template <int N, int M> struct Slice : AbstractSlice {
               }
               shouldUploadVertices = true;
               hasUnitCell = false;
+              for (auto &info : unitCellInfo) {
+                info = "";
+              }
             }
           } else {
             it++;
@@ -412,6 +418,14 @@ template <int N, int M> struct Slice : AbstractSlice {
             for (int i = 0; i < M; ++i) {
               unitBasis[i] = cornerNodes[i + 1]->pos - origin;
               endCorner += unitBasis[i];
+            }
+
+            for (int i = 0; i < M; ++i) {
+              unitCellInfo[i] = "Vec " + std::to_string(i) + ": {" +
+                                std::to_string(unitBasis[i][0]) + ", " +
+                                std::to_string(unitBasis[i][1]) + ", " +
+                                std::to_string(unitBasis[i][2]) +
+                                "}, Mag: " + std::to_string(unitBasis[i].mag());
             }
 
             unitCellMesh.reset();
