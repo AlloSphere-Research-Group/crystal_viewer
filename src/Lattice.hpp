@@ -1,5 +1,5 @@
-#ifndef CRYSTAL_HPP
-#define CRYSTAL_HPP
+#ifndef LATTICE_HPP
+#define LATTICE_HPP
 
 #include <array>
 #include <cmath>
@@ -101,7 +101,7 @@ template <int N> struct Lattice : AbstractLattice {
   }
 
   virtual void update() {
-    unitCell.resize((1 << latticeDim) + additionalPoints.size());
+    unitCell.resize((1 << latticeDim) + (unsigned int)additionalPoints.size());
     projectedVertices.resize(unitCell.size());
     colors.resize(unitCell.size());
 
@@ -266,4 +266,4 @@ template <int N> struct Lattice : AbstractLattice {
   }
 };
 
-#endif // CRYSTAL_HPP
+#endif // LATTICE_HPP

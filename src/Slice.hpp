@@ -24,6 +24,7 @@
 using json = nlohmann::json;
 
 #include "Lattice.hpp"
+#include "Node.hpp"
 
 using namespace al;
 
@@ -78,67 +79,6 @@ struct AbstractSlice {
 
   bool shouldUploadVertices{false};
   bool shouldUploadEdges{false};
-};
-
-struct CrystalNode {
-  unsigned int id;
-  Vec3f pos;
-  unsigned int overlap{0};
-  unsigned int environment;
-  PickableBB pickable;
-  std::vector<std::pair<int, Vec3f>> neighbours;
-
-  Vec3f unitCellCoord;
-  bool insideUnitCell;
-  bool isInteriorNode;
-
-  CrystalNode(std::string name) : pickable(name) {}
-
-  void addNeighbour(CrystalNode &neighbourNode) {
-    Vec3f vecToNeighbour = neighbourNode.pos - pos;
-    neighbours.push_back({neighbourNode.id, vecToNeighbour});
-  }
-
-  void sortNeighbours() {
-    for (int i = 0; i < neighbours.size(); ++i) {
-      for (int j = i + 1; j < neighbours.size(); ++j) {
-        Vec3f diff = neighbours[i].second - neighbours[j].second;
-
-        if (diff[0] > 1E-4) {
-          neighbours[i].swap(neighbours[j]);
-        } else if (abs(diff[0]) <= 1E-4) {
-          if (diff[1] > 1E-4) {
-            neighbours[i].swap(neighbours[j]);
-          } else if (abs(diff[1]) <= 1E-4) {
-            // std::cout << "remove, diff_xy same" << std::endl;
-            if (diff[2] > 1E-4) {
-              neighbours[i].swap(neighbours[j]);
-            } else if (abs(diff[2]) <= 1E-4) {
-              std::cout << "remove diff same wtf" << std::endl;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  bool compareNeighbours(CrystalNode *newNode) {
-    std::vector<std::pair<int, Vec3f>> &newNeighbours = newNode->neighbours;
-
-    if (newNeighbours.size() != neighbours.size()) {
-      return false;
-    }
-
-    for (int i = 0; i < newNeighbours.size(); ++i) {
-      Vec3f diff = neighbours[i].second - newNeighbours[i].second;
-
-      if (diff.sumAbs() > 1E-4) {
-        return false;
-      }
-    }
-
-    return true;
-  }
 };
 
 template <int N, int M> struct Slice : AbstractSlice {
@@ -255,7 +195,7 @@ template <int N, int M> struct Slice : AbstractSlice {
         bool skip = false;
         for (auto &node : nodes) {
           Vec3f diff = projVertex - node.pos;
-          if (diff.sumAbs() < 1E-4) {
+          if (diff.sumAbs() < compareThreshold) {
             node.overlap++;
             skip = true;
             break;
@@ -473,13 +413,13 @@ template <int N, int M> struct Slice : AbstractSlice {
               Vec3f unitCellCoord = unitCellMatInv * pos;
               nodes[i].unitCellCoord = unitCellCoord;
 
-              if (unitCellCoord.min() > -1E-4 &&
-                  unitCellCoord.max() < (1.f + 1E-4)) {
+              if (unitCellCoord.min() > -compareThreshold &&
+                  unitCellCoord.max() < (1.f + compareThreshold)) {
                 nodes[i].insideUnitCell = true;
                 nodes[i].isInteriorNode = false;
                 for (int j = 0; j < unitCellCoord.size(); ++j) {
-                  if (unitCellCoord[j] > 1E-4 &&
-                      unitCellCoord[j] < (1.f - 1E-4)) {
+                  if (unitCellCoord[j] > compareThreshold &&
+                      unitCellCoord[j] < (1.f - compareThreshold)) {
                     nodes[i].isInteriorNode = true;
                   }
                 }
@@ -645,7 +585,7 @@ template <int N, int M> struct Slice : AbstractSlice {
         newBasis = newBasis - newBasis.dot(sliceBasis[j]) * sliceBasis[j];
       }
 
-      if (newBasis.sumAbs() < 1E-4) {
+      if (newBasis.sumAbs() < compareThreshold) {
         // std::cout << "Unable to create orthogonal basis, using remaining
         // basis"
         //           << std::endl;
@@ -666,12 +606,12 @@ template <int N, int M> struct Slice : AbstractSlice {
             newBasis = newBasis - newBasis.dot(sliceBasis[j]) * sliceBasis[j];
           }
 
-          if (newBasis.sumAbs() >= 1E-4) {
+          if (newBasis.sumAbs() >= compareThreshold) {
             break;
           }
         }
 
-        if (newBasis.sumAbs() < 1E-4) {
+        if (newBasis.sumAbs() < compareThreshold) {
           std::cout << "Unable to create orthogonal basis, randomizing"
                     << std::endl;
           do {
@@ -683,7 +623,7 @@ template <int N, int M> struct Slice : AbstractSlice {
             for (int j = 0; j < i; ++j) {
               newBasis = newBasis - newBasis.dot(sliceBasis[j]) * sliceBasis[j];
             }
-          } while (newBasis.sumAbs() < 1E-4);
+          } while (newBasis.sumAbs() < compareThreshold);
         }
       }
 

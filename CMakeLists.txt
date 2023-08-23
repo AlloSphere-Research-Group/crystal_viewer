@@ -11,6 +11,7 @@ add_executable(${APP_NAME}
   src/CrystalViewer.hpp
   src/Lattice.hpp
   src/Slice.hpp
+  src/Node.hpp
 )
 
 # add allolib as a subdirectory to the project
