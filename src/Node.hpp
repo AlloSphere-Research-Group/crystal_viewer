@@ -72,4 +72,8 @@ struct CrystalNode {
   }
 };
 
+struct UnitCell {
+  
+};
+
 #endif // NODE_HPP
