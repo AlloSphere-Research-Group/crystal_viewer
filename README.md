@@ -8,28 +8,39 @@ Crystal Viewer currently requires:
  * cmake version 3.0 or higher
  * c++ compiler
 
-## How to compile / run
+### Configure using cmake
 From a terminal you can run:
 
     ./configure.sh
+
+or on windows systems without bash:
+
+    ./configure.bat
+
+This will configure the project, and prepare it for compilation.
+
+### Compiling & Running the application
+After the initial configuration, you can run
+
     ./run.sh
 
-on windows systems without bash:
-    ./configure.bat
+or on windows systems without bash:
+
     ./run.bat
 
-This will configure and compile the project, and run the binary if compilation is successful.
+This will compile the application, and run the binary if successful.
+
+In order to run the application afterwards, you can just repeat the above command.
 
 Alternatively, you can open the CMakeLists.txt proeject in an IDE like VS Code, Visual Studio or Qt Creator and have the IDE manage the configuration and execution of cmake.
 
-You can also generate other IDE projects through cmake.
-
-## How to remove the build tree
+### How to remove the build tree
 If you need to delete the build:
 
     ./distclean.sh
 
 on windows systems without bash:
+
     ./distclean.bat
 
 should recursively clean all the build directories of the project including those of allolib and its submodules.
