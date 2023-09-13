@@ -1,10 +1,9 @@
 When unit cell is calculated, report angles
-Additional ways to identify
-
+add in a way to adjust basis for subspace
 add origin point to list, remove any interior points with 1 in their fract coord.
 
+Additional ways to identify
 Performance upgrade
 
-add in a way to adjust basis for subspace
 add in the TINC interface to make data visible from TINC python client
 protobuf 4.2
