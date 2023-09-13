@@ -183,6 +183,12 @@ public:
       updateSliceBasis();
     }
 
+    if (loadUnitCell) {
+      slice->loadUnitCell(cornerNode0.get(), cornerNode1.get(),
+                          cornerNode2.get(), cornerNode3.get());
+      loadUnitCell = false;
+    }
+
     g.depthTesting(false);
     g.blending(true);
     g.blendAdd();
@@ -254,8 +260,14 @@ public:
                           slice->getEdgeNum());
   }
 
-  void updatePickables(bool updateNodes) {
-    slice->updatePickables(nodeInfo, unitCellInfo, updateNodes);
+  void updatePickables(bool modifyUnitCell) {
+    if (slice->updatePickables(nodeInfo, modifyUnitCell)) {
+      slice->updateReport(unitCellInfo, cornerNodes);
+      cornerNode0.set(cornerNodes[0]);
+      cornerNode1.set(cornerNodes[1]);
+      cornerNode2.set(cornerNodes[2]);
+      cornerNode3.set(cornerNodes[3]);
+    }
   }
 
   void setBasis(Vec5f &value, int basisNum) {
@@ -457,6 +469,11 @@ public:
     sliceBasis3.registerChangeCallback(
         [&](Vec5f value) { slice->setSliceBasis(value, 3); });
 
+    cornerNode0.registerChangeCallback([&](int value) { loadUnitCell = true; });
+    cornerNode1.registerChangeCallback([&](int value) { loadUnitCell = true; });
+    cornerNode2.registerChangeCallback([&](int value) { loadUnitCell = true; });
+    cornerNode3.registerChangeCallback([&](int value) { loadUnitCell = true; });
+
     // Triggers
     resetUnitCell.registerChangeCallback(
         {[&](bool value) { slice->resetUnitCell(); }});
@@ -474,8 +491,11 @@ public:
     savePreset.registerChangeCallback(
         [&](float value) { presets.storePreset(presetName); });
 
-    loadPreset.registerChangeCallback(
-        [&](float value) { presets.recallPreset(presetName); });
+    loadPreset.registerChangeCallback([&](float value) {
+      std::cout << "before loading" << std::endl;
+      presets.recallPresetSynchronous(presetName);
+      std::cout << "after loading" << std::endl;
+    });
 
     parameterServer << crystalDim << sliceDim << latticeSize << basis0 << basis1
                     << basis2 << basis3 << basis4 << resetBasis << showLattice
@@ -483,6 +503,7 @@ public:
                     << edgeThreshold << intMiller << miller0 << miller1
                     << miller2 << hyperplane0 << hyperplane1 << hyperplane2
                     << sliceBasis0 << sliceBasis1 << sliceBasis2 << sliceBasis3
+                    << cornerNode0 << cornerNode1 << cornerNode2 << cornerNode3
                     << resetUnitCell;
 
     // TODO: update apparently happens multiple times on load
@@ -490,7 +511,8 @@ public:
             << sphereSize << edgeColor << sliceDepth << edgeThreshold
             << intMiller << miller0 << miller1 << miller2 << hyperplane0
             << hyperplane1 << hyperplane2 << sliceBasis0 << sliceBasis1
-            << sliceBasis2 << sliceBasis3;
+            << sliceBasis2 << sliceBasis3 << cornerNode0 << cornerNode1
+            << cornerNode2 << cornerNode3;
 
     return true;
   }
@@ -648,6 +670,11 @@ public:
       ImGui::Text(info.c_str());
     }
 
+    ImGui::Text("%d", cornerNode0.get());
+    ImGui::Text("%d", cornerNode1.get());
+    ImGui::Text("%d", cornerNode2.get());
+    ImGui::Text("%d", cornerNode3.get());
+
     ImGui::End();
   }
 
@@ -729,6 +756,7 @@ private:
   PresetHandler presets{"data/presets", true};
 
   bool needsCreate{false};
+  bool loadUnitCell{false};
 
   ParameterInt crystalDim{"crystalDim", "", 3, 3, 5};
   ParameterInt sliceDim{"sliceDim", "", 2, 2, 2};
@@ -764,6 +792,12 @@ private:
   ParameterVec5 sliceBasis1{"sliceBasis1", "", Vec5f(0.f, 0.f, 0.f, 0.f, 0.f)};
   ParameterVec5 sliceBasis2{"sliceBasis2", "", Vec5f(0.f, 0.f, 0.f, 0.f, 0.f)};
   ParameterVec5 sliceBasis3{"sliceBasis3", "", Vec5f(0.f, 0.f, 0.f, 0.f, 0.f)};
+
+  ParameterInt cornerNode0{"cornerNode0", "", -1, -1, INT32_MAX};
+  ParameterInt cornerNode1{"cornerNode1", "", -1, -1, INT32_MAX};
+  ParameterInt cornerNode2{"cornerNode2", "", -1, -1, INT32_MAX};
+  ParameterInt cornerNode3{"cornerNode3", "", -1, -1, INT32_MAX};
+  Vec4i cornerNodes{-1, -1, -1, -1};
 
   Trigger resetUnitCell{"resetUnitCell", ""};
 

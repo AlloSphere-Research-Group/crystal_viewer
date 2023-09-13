@@ -6,8 +6,11 @@
 #include <utility>
 #include <vector>
 
+#include "al/graphics/al_VAOMesh.hpp"
 #include "al/math/al_Vec.hpp"
 #include "al/ui/al_Pickable.hpp"
+
+using namespace al;
 
 static const float compareThreshold = 1E-4;
 
@@ -73,7 +76,88 @@ struct CrystalNode {
 };
 
 struct UnitCell {
-  
+  std::vector<Vec3f> unitBasis;
+  std::vector<CrystalNode *> cornerNodes;
+  std::vector<CrystalNode *> unitCellNodes;
+  VAOMesh unitCellMesh;
+
+  void clear(bool clearAll = true) {
+    if (clearAll) {
+      cornerNodes.clear();
+    }
+    unitCellNodes.clear();
+    unitCellMesh.reset();
+    unitCellMesh.update();
+  }
+
+  bool hasPoint(CrystalNode *node) {
+    for (std::vector<CrystalNode *>::iterator it = cornerNodes.begin();
+         it != cornerNodes.end();) {
+      if (*it == node) {
+        it = cornerNodes.erase(it);
+
+        clear(false); // maintain corner nodes
+
+        return true;
+      }
+      it++;
+    }
+    return false;
+  }
+
+  bool hasMesh() { return unitCellMesh.valid(); }
+
+  // returns true when nodes are added to the unit cell
+  bool addNode(CrystalNode *node, int &sliceDim) {
+    if (cornerNodes.size() > sliceDim) {
+      return false;
+    }
+
+    cornerNodes.push_back(node);
+
+    if (cornerNodes.size() == sliceDim + 1) {
+      buildMesh(sliceDim);
+    }
+
+    return true;
+  }
+
+  void buildMesh(int &sliceDim) {
+    Vec3f &origin = cornerNodes[0]->pos;
+    Vec3f endCorner = origin;
+
+    unitBasis.resize(sliceDim);
+
+    for (int i = 0; i < sliceDim; ++i) {
+      unitBasis[i] = cornerNodes[i + 1]->pos - origin;
+      endCorner += unitBasis[i];
+    }
+
+    unitCellMesh.primitive(Mesh::LINES);
+
+    for (int i = 0; i < sliceDim; ++i) {
+      Vec3f &newPoint = cornerNodes[i + 1]->pos;
+      unitCellMesh.vertex(origin);
+      unitCellMesh.vertex(newPoint);
+
+      if (sliceDim == 2) {
+        unitCellMesh.vertex(newPoint);
+        unitCellMesh.vertex(endCorner);
+      } else if (sliceDim == 3) {
+        for (int j = 0; j < sliceDim; ++j) {
+          if (j != i) {
+            unitCellMesh.vertex(newPoint);
+            unitCellMesh.vertex(newPoint + unitBasis[j]);
+
+            unitCellMesh.vertex(newPoint + unitBasis[j]);
+            unitCellMesh.vertex(endCorner);
+          }
+        }
+      }
+    }
+
+    unitCellMesh.update();
+  }
 };
 
 #endif // NODE_HPP

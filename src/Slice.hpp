@@ -33,9 +33,10 @@ struct AbstractSlice {
   virtual bool pollUpdate() = 0;
 
   virtual void updateNodes() = 0;
-  virtual void updatePickables(std::array<std::string, 4> &nodeInfo,
-                               std::array<std::string, 5> &unitCellInfo,
-                               bool updateNodes) = 0;
+  virtual bool updatePickables(std::array<std::string, 4> &nodeInfo,
+                               bool modifyUnitCell) = 0;
+  virtual void updateReport(std::array<std::string, 5> &unitCellInfo,
+                            Vec4i &cornerNodes) = 0;
 
   virtual void setMiller(Vec5f &value, unsigned int millerNum) = 0;
   virtual void roundMiller() = 0;
@@ -59,6 +60,8 @@ struct AbstractSlice {
 
   virtual void drawPickables(Graphics &g) = 0;
 
+  virtual void loadUnitCell(int cornerNode0, int cornerNode1, int cornerNode2,
+                            int cornerNode3) = 0;
   virtual void resetUnitCell() = 0;
 
   virtual void exportToTxt(std::string &filePath) = 0;
@@ -99,11 +102,7 @@ template <int N, int M> struct Slice : AbstractSlice {
   std::vector<Vec3f> edgeStarts;
   std::vector<Vec3f> edgeEnds;
 
-  std::array<Vec3f, M> unitBasis;
-  std::vector<CrystalNode *> cornerNodes;
-  std::vector<CrystalNode *> unitCellNodes;
-  VAOMesh unitCellMesh;
-  bool hasUnitCell{false};
+  UnitCell unitCell;
 
   Slice() {
     latticeDim = N;
@@ -164,11 +163,7 @@ template <int N, int M> struct Slice : AbstractSlice {
 
     computeNormals();
 
-    // TODO: reset other unitcell related stuff
-    cornerNodes.clear();
-    unitCellNodes.clear();
-    unitCellMesh.reset();
-    hasUnitCell = false;
+    unitCell.clear();
 
     nodes.clear();
 
@@ -299,147 +294,107 @@ template <int N, int M> struct Slice : AbstractSlice {
     }
   }
 
-  virtual void updatePickables(std::array<std::string, 4> &nodeInfo,
-                               std::array<std::string, 5> &unitCellInfo,
-                               bool updateNodes) {
+  // returns true if unit cell has been modified
+  virtual bool updatePickables(std::array<std::string, 4> &nodeInfo,
+                               bool modifyUnitCell) {
     for (auto &node : nodes) {
       auto &pickable = node.pickable;
 
       if (pickable.selected.get() && pickable.hover.get()) {
-        if (!updateNodes) {
+        if (!modifyUnitCell) {
           nodeInfo[0] = "Node: " + std::to_string(node.id);
           nodeInfo[1] = " overlap: " + std::to_string(node.overlap);
           nodeInfo[2] = " env: " + std::to_string(node.environment);
           nodeInfo[3] =
               " neighbours: " + std::to_string(node.neighbours.size());
-          // TODO: output this to UI
-          // std::cout << "Node: " << node.id << std::endl;
-          // std::cout << " overlap: " << node.overlap << std::endl;
-          // std::cout << " env: " << node.environment << std::endl;
-          // std::cout << " neighbours: " << node.neighbours.size() <<
-          // std::endl; for (auto &n : node.neighbours) {
-          //   std::cout << "  " << n.first << ": " << n.second << std::endl;
-          // }
-          return;
+          return false;
         }
 
-        bool hasPoint = false;
-        for (std::vector<CrystalNode *>::iterator it = cornerNodes.begin();
-             it != cornerNodes.end();) {
-          if (*it == &node) {
-            hasPoint = true;
-            it = cornerNodes.erase(it);
-            pickable.selected = false;
-            if (hasUnitCell) {
-              unitCellNodes.clear();
-              unitCellMesh.reset();
-              for (auto &c : colors) {
-                c.a = 1.f;
-              }
-              shouldUploadVertices = true;
-              hasUnitCell = false;
-              for (auto &info : unitCellInfo) {
-                info = "";
-              }
-            }
-          } else {
-            it++;
-          }
+        if (unitCell.hasPoint(&node)) {
+          pickable.selected = false;
+
+          updateUnitCell();
+
+          return true;
+        } else if (unitCell.addNode(&node, sliceDim)) {
+          updateUnitCell();
+
+          return true;
         }
 
-        if (!hasPoint && cornerNodes.size() <= M) {
-          cornerNodes.push_back(&node);
-
-          // Construct Unit Cell
-          if (cornerNodes.size() == M + 1) {
-            Vec3f origin = cornerNodes[0]->pos;
-            Vec3f endCorner = origin;
-
-            for (int i = 0; i < M; ++i) {
-              unitBasis[i] = cornerNodes[i + 1]->pos - origin;
-              endCorner += unitBasis[i];
-            }
-
-            for (int i = 0; i < M; ++i) {
-              unitCellInfo[i] = "Vec " + std::to_string(i) + ": {" +
-                                std::to_string(unitBasis[i][0]) + ", " +
-                                std::to_string(unitBasis[i][1]) + ", " +
-                                std::to_string(unitBasis[i][2]) +
-                                "}, Mag: " + std::to_string(unitBasis[i].mag());
-            }
-
-            unitCellMesh.reset();
-            unitCellMesh.primitive(Mesh::LINES);
-
-            for (int i = 0; i < M; ++i) {
-              Vec3f &newPoint = cornerNodes[i + 1]->pos;
-              unitCellMesh.vertex(origin);
-              unitCellMesh.vertex(newPoint);
-
-              if (M == 2) {
-                unitCellMesh.vertex(newPoint);
-                unitCellMesh.vertex(endCorner);
-              } else if (M == 3) {
-                for (int k = 0; k < M; ++k) {
-                  if (k != i) {
-                    unitCellMesh.vertex(newPoint);
-                    unitCellMesh.vertex(newPoint + unitBasis[k]);
-
-                    unitCellMesh.vertex(newPoint + unitBasis[k]);
-                    unitCellMesh.vertex(endCorner);
-                  }
-                }
-              }
-            }
-
-            unitCellMesh.update();
-
-            Mat3f unitCellMatInv;
-            unitCellMatInv.setIdentity();
-            for (int i = 0; i < unitBasis.size(); ++i) {
-              unitCellMatInv.setCol3(unitBasis[i][0], unitBasis[i][1],
-                                     unitBasis[i][2], i);
-            }
-
-            if (!invert(unitCellMatInv)) {
-              std::cout << "Unable to create unit cell: Co-planar vectors"
-                        << std::endl;
-              break;
-            }
-
-            // check if inside unitCell
-            for (int i = 0; i < nodes.size(); ++i) {
-              Vec3f pos = nodes[i].pos - origin;
-              Vec3f unitCellCoord = unitCellMatInv * pos;
-              nodes[i].unitCellCoord = unitCellCoord;
-
-              if (unitCellCoord.min() > -compareThreshold &&
-                  unitCellCoord.max() < (1.f + compareThreshold)) {
-                nodes[i].insideUnitCell = true;
-                nodes[i].isInteriorNode = false;
-                for (int j = 0; j < unitCellCoord.size(); ++j) {
-                  if (unitCellCoord[j] > compareThreshold &&
-                      unitCellCoord[j] < (1.f - compareThreshold)) {
-                    nodes[i].isInteriorNode = true;
-                  }
-                }
-                unitCellNodes.push_back(&nodes[i]);
-                colors[i].a = 1.f;
-              } else {
-                nodes[i].insideUnitCell = false;
-                nodes[i].isInteriorNode = false;
-                colors[i].a = 0.1f;
-              }
-            }
-
-            shouldUploadVertices = true;
-            hasUnitCell = true;
-            std::cout << "unitCell: " << unitCellNodes.size() << std::endl;
-          }
-        }
-
-        break;
+        return false;
       }
+    }
+    return false;
+  }
+
+  void updateUnitCell() {
+    // update node metadata based on completed unit cell
+    if (unitCell.hasMesh()) {
+      Mat3f unitCellMatInv;
+      unitCellMatInv.setIdentity();
+      for (int i = 0; i < unitCell.unitBasis.size(); ++i) {
+        Vec3f &basis = unitCell.unitBasis[i];
+        unitCellMatInv.setCol3(basis[0], basis[1], basis[2], i);
+      }
+
+      if (!invert(unitCellMatInv)) {
+        std::cout << "Unable to create unit cell: Co-planar vectors"
+                  << std::endl;
+        return;
+      }
+
+      // check if nodes are inside unitCell
+      for (int i = 0; i < nodes.size(); ++i) {
+        Vec3f pos = nodes[i].pos - unitCell.cornerNodes[0]->pos;
+        Vec3f unitCellCoord = unitCellMatInv * pos;
+        nodes[i].unitCellCoord = unitCellCoord;
+
+        if (unitCellCoord.min() > -compareThreshold &&
+            unitCellCoord.max() < (1.f + compareThreshold)) {
+          nodes[i].insideUnitCell = true;
+          nodes[i].isInteriorNode = true;
+          // check if node is on faces
+          // TODO: add in origin later to count as interior?
+          for (int j = 0; j < unitCellCoord.size(); ++j) {
+            if (unitCellCoord[j] < compareThreshold &&
+                unitCellCoord[j] > (1.f - compareThreshold)) {
+              nodes[i].isInteriorNode = false;
+            }
+          }
+          unitCell.unitCellNodes.push_back(&nodes[i]);
+          // TODO: change color later
+          colors[i].a = 1.f;
+        } else {
+          nodes[i].insideUnitCell = false;
+          nodes[i].isInteriorNode = false;
+          colors[i].a = 0.1f;
+        }
+      }
+    } else {
+      for (auto &c : colors) {
+        c.a = 1.f;
+      }
+    }
+    shouldUploadVertices = true;
+  }
+
+  virtual void updateReport(std::array<std::string, 5> &unitCellInfo,
+                            Vec4i &cornerNodes) {
+    for (auto &info : unitCellInfo) {
+      info = "";
+    }
+    for (int i = 0; i < unitCell.unitBasis.size(); ++i) {
+      unitCellInfo[i] = "Vec " + std::to_string(i) + ": {" +
+                        std::to_string(unitCell.unitBasis[i][0]) + ", " +
+                        std::to_string(unitCell.unitBasis[i][1]) + ", " +
+                        std::to_string(unitCell.unitBasis[i][2]) + "}, Mag: " +
+                        std::to_string(unitCell.unitBasis[i].mag());
+    }
+
+    cornerNodes.set(-1);
+    for (int i = 0; i < unitCell.cornerNodes.size(); ++i) {
+      cornerNodes[i] = unitCell.cornerNodes[i]->id;
     }
   }
 
@@ -451,14 +406,14 @@ template <int N, int M> struct Slice : AbstractSlice {
     }
 
     g.color(1, 1, 0);
-    for (auto *u : cornerNodes) {
+    for (auto *cornerNode : unitCell.cornerNodes) {
       g.pushMatrix();
-      g.translate(u->pos);
+      g.translate(cornerNode->pos);
       g.draw(box);
       g.popMatrix();
     }
 
-    g.draw(unitCellMesh);
+    g.draw(unitCell.unitCellMesh);
   }
 
   virtual void setMiller(Vec5f &value, unsigned int millerNum) {
@@ -642,10 +597,27 @@ template <int N, int M> struct Slice : AbstractSlice {
   virtual int getVertexNum() { return projectedVertices.size(); }
   virtual int getEdgeNum() { return edgeStarts.size(); }
 
+  virtual void loadUnitCell(int cornerNode0, int cornerNode1, int cornerNode2,
+                            int cornerNode3) {
+    unitCell.clear();
+    if (cornerNode0 >= 0) {
+      unitCell.addNode(&nodes[cornerNode0], sliceDim);
+      if (cornerNode1 >= 0) {
+        unitCell.addNode(&nodes[cornerNode1], sliceDim);
+        if (cornerNode2 >= 0) {
+          unitCell.addNode(&nodes[cornerNode2], sliceDim);
+          if (cornerNode3 >= 0) {
+            unitCell.addNode(&nodes[cornerNode3], sliceDim);
+          }
+        }
+      }
+
+      updateUnitCell();
+    }
+  }
+
   virtual void resetUnitCell() {
-    cornerNodes.clear();
-    unitCellNodes.clear();
-    unitCellMesh.reset();
+    unitCell.clear();
     // TODO: add in color adjustment
   }
 
@@ -686,7 +658,7 @@ template <int N, int M> struct Slice : AbstractSlice {
 
     txtOut << std::endl;
 
-    for (auto &basis : unitBasis) {
+    for (auto &basis : unitCell.unitBasis) {
       for (int j = 0; j < M - 1; ++j) {
         txtOut << std::to_string(basis[j]) + " ";
       }
@@ -720,11 +692,11 @@ template <int N, int M> struct Slice : AbstractSlice {
       newJson["projection_basis"].push_back(basis);
     }
 
-    for (auto &basis : unitBasis) {
+    for (auto &basis : unitCell.unitBasis) {
       newJson["unitCell_basis"].push_back(basis);
     }
 
-    for (auto *node : unitCellNodes) {
+    for (auto *node : unitCell.unitCellNodes) {
       newJson["unitCell_positions"].push_back(node->pos);
       if (node->isInteriorNode) {
         newJson["unitCell_interior_fract_coords"].push_back(
