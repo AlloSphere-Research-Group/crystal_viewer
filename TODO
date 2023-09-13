@@ -1,9 +1,5 @@
-see if we can add in unitcell to the presets
-
 When unit cell is calculated, report angles
-adjust color when unitcell is selected
 Additional ways to identify
-
 
 add origin point to list, remove any interior points with 1 in their fract coord.
 
