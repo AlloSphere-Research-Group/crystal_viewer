@@ -187,6 +187,7 @@ public:
       slice->loadUnitCell(cornerNode0.get(), cornerNode1.get(),
                           cornerNode2.get(), cornerNode3.get());
       loadUnitCell = false;
+      showInfo = true;
     }
 
     g.depthTesting(false);
@@ -262,7 +263,7 @@ public:
 
   void updatePickables(bool modifyUnitCell) {
     if (slice->updatePickables(nodeInfo, modifyUnitCell)) {
-      slice->updateReport(unitCellInfo, cornerNodes);
+      slice->updateUnitCellInfo(unitCellInfo, cornerNodes);
       cornerNode0.set(cornerNodes[0]);
       cornerNode1.set(cornerNodes[1]);
       cornerNode2.set(cornerNodes[2]);
@@ -497,6 +498,8 @@ public:
       std::cout << "after loading" << std::endl;
     });
 
+    openInfo.registerChangeCallback([&](float value) { showInfo = !showInfo; });
+
     parameterServer << crystalDim << sliceDim << latticeSize << basis0 << basis1
                     << basis2 << basis3 << basis4 << resetBasis << showLattice
                     << showSlice << sphereSize << edgeColor << sliceDepth
@@ -527,155 +530,165 @@ public:
   }
 
   void setGUIFrame(NavInputControl &navControl) {
-    ImGui::Begin("Crystal");
+    if (ImGui::Begin("Crystal")) {
 
-    ParameterGUI::draw(&crystalDim);
-    ParameterGUI::draw(&sliceDim);
-    ParameterGUI::draw(&latticeSize);
+      ParameterGUI::draw(&crystalDim);
+      ParameterGUI::draw(&sliceDim);
+      ParameterGUI::draw(&latticeSize);
 
-    if (ImGui::CollapsingHeader("Edit Basis Vector",
-                                ImGuiTreeNodeFlags_CollapsingHeader)) {
-      // ImGui::PushStyleColor(ImGuiCol_FrameBg,
-      //                       (ImVec4)ImColor::HSV(0.15f, 0.5f, 0.3f));
-      // ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,
-      //                       (ImVec4)ImColor::HSV(0.15f, 0.6f, 0.3f));
-      // ImGui::PushStyleColor(ImGuiCol_FrameBgActive,
-      //                       (ImVec4)ImColor::HSV(0.15f, 0.7f, 0.3f));
-      // ImGui::PushStyleColor(ImGuiCol_SliderGrab,
-      //                       (ImVec4)ImColor::HSV(0.15f, 0.9f, 0.5f));
-      // ParameterGUI::draw(&basisNum);
-      // ImGui::PopStyleColor(4);
-      ImGui::Indent();
-      ParameterGUI::draw(&basis0);
-      ParameterGUI::draw(&basis1);
-      ParameterGUI::draw(&basis2);
-      ParameterGUI::draw(&basis3);
-      ParameterGUI::draw(&basis4);
-      ParameterGUI::draw(&resetBasis);
-      ImGui::Unindent();
-    }
+      if (ImGui::CollapsingHeader("Edit Basis Vector",
+                                  ImGuiTreeNodeFlags_CollapsingHeader)) {
+        // ImGui::PushStyleColor(ImGuiCol_FrameBg,
+        //                       (ImVec4)ImColor::HSV(0.15f, 0.5f, 0.3f));
+        // ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,
+        //                       (ImVec4)ImColor::HSV(0.15f, 0.6f, 0.3f));
+        // ImGui::PushStyleColor(ImGuiCol_FrameBgActive,
+        //                       (ImVec4)ImColor::HSV(0.15f, 0.7f, 0.3f));
+        // ImGui::PushStyleColor(ImGuiCol_SliderGrab,
+        //                       (ImVec4)ImColor::HSV(0.15f, 0.9f, 0.5f));
+        // ParameterGUI::draw(&basisNum);
+        // ImGui::PopStyleColor(4);
+        ImGui::Indent();
+        ParameterGUI::draw(&basis0);
+        ParameterGUI::draw(&basis1);
+        ParameterGUI::draw(&basis2);
+        ParameterGUI::draw(&basis3);
+        ParameterGUI::draw(&basis4);
+        ParameterGUI::draw(&resetBasis);
+        ImGui::Unindent();
+      }
 
-    ParameterGUI::draw(&showLattice);
-    ImGui::SameLine();
-    ParameterGUI::draw(&showSlice);
+      ParameterGUI::draw(&showLattice);
+      ImGui::SameLine();
+      ParameterGUI::draw(&showSlice);
+      ImGui::SameLine(0, 20);
+      ParameterGUI::draw(&openInfo);
 
-    if (ImGui::CollapsingHeader("Edit Display Settings",
-                                ImGuiTreeNodeFlags_CollapsingHeader)) {
-      ParameterGUI::draw(&sphereSize);
-      ParameterGUI::draw(&edgeColor);
-    }
-
-    ImGui::NewLine();
-
-    if (showSlice.get()) {
-      ParameterGUI::draw(&sliceDepth);
-      ParameterGUI::draw(&edgeThreshold);
+      if (ImGui::CollapsingHeader("Edit Display Settings",
+                                  ImGuiTreeNodeFlags_CollapsingHeader)) {
+        ParameterGUI::draw(&sphereSize);
+        ParameterGUI::draw(&edgeColor);
+      }
 
       ImGui::NewLine();
-    }
 
-    if (ImGui::CollapsingHeader("Edit Miller Indices",
-                                ImGuiTreeNodeFlags_CollapsingHeader |
-                                    ImGuiTreeNodeFlags_DefaultOpen)) {
-      // ImGui::PushStyleColor(ImGuiCol_FrameBg,
-      //                       (ImVec4)ImColor::HSV(0.15f, 0.5f, 0.3f));
-      // ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,
-      //                       (ImVec4)ImColor::HSV(0.15f, 0.6f, 0.3f));
-      // ImGui::PushStyleColor(ImGuiCol_FrameBgActive,
-      //                       (ImVec4)ImColor::HSV(0.15f, 0.7f, 0.3f));
-      // ImGui::PushStyleColor(ImGuiCol_SliderGrab,
-      //                       (ImVec4)ImColor::HSV(0.15f, 0.9f, 0.5f));
-      // ParameterGUI::draw(&millerNum);
-      // ImGui::PopStyleColor(4);
+      if (showSlice.get()) {
+        ParameterGUI::draw(&sliceDepth);
+        ParameterGUI::draw(&edgeThreshold);
 
-      ParameterGUI::draw(&intMiller);
-      ImGui::Indent();
-      ParameterGUI::draw(&miller0);
-      ParameterGUI::draw(&miller1);
-      ParameterGUI::draw(&miller2);
-      ImGui::Unindent();
-    }
+        ImGui::NewLine();
+      }
 
-    if (ImGui::CollapsingHeader("Edit Hyperplane Normals",
-                                ImGuiTreeNodeFlags_CollapsingHeader)) {
-      ImGui::Indent();
-      ParameterGUI::draw(&hyperplane0);
-      ParameterGUI::draw(&hyperplane1);
-      ParameterGUI::draw(&hyperplane2);
-      ImGui::Unindent();
-    }
+      if (ImGui::CollapsingHeader("Edit Miller Indices",
+                                  ImGuiTreeNodeFlags_CollapsingHeader |
+                                      ImGuiTreeNodeFlags_DefaultOpen)) {
+        // ImGui::PushStyleColor(ImGuiCol_FrameBg,
+        //                       (ImVec4)ImColor::HSV(0.15f, 0.5f, 0.3f));
+        // ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,
+        //                       (ImVec4)ImColor::HSV(0.15f, 0.6f, 0.3f));
+        // ImGui::PushStyleColor(ImGuiCol_FrameBgActive,
+        //                       (ImVec4)ImColor::HSV(0.15f, 0.7f, 0.3f));
+        // ImGui::PushStyleColor(ImGuiCol_SliderGrab,
+        //                       (ImVec4)ImColor::HSV(0.15f, 0.9f, 0.5f));
+        // ParameterGUI::draw(&millerNum);
+        // ImGui::PopStyleColor(4);
 
-    if (ImGui::CollapsingHeader("Edit Slice Basis",
-                                ImGuiTreeNodeFlags_CollapsingHeader)) {
-      ImGui::Indent();
-      ParameterGUI::draw(&sliceBasis0);
-      ParameterGUI::draw(&sliceBasis1);
-      ParameterGUI::draw(&sliceBasis2);
-      ParameterGUI::draw(&sliceBasis3);
-      ImGui::Unindent();
-    }
+        ParameterGUI::draw(&intMiller);
+        ImGui::Indent();
+        ParameterGUI::draw(&miller0);
+        ParameterGUI::draw(&miller1);
+        ParameterGUI::draw(&miller2);
+        ImGui::Unindent();
+      }
 
-    ParameterGUI::draw(&resetUnitCell);
+      if (ImGui::CollapsingHeader("Edit Hyperplane Normals",
+                                  ImGuiTreeNodeFlags_CollapsingHeader)) {
+        ImGui::Indent();
+        ParameterGUI::draw(&hyperplane0);
+        ParameterGUI::draw(&hyperplane1);
+        ParameterGUI::draw(&hyperplane2);
+        ImGui::Unindent();
+      }
 
-    ImGui::NewLine();
+      if (ImGui::CollapsingHeader("Edit Slice Basis",
+                                  ImGuiTreeNodeFlags_CollapsingHeader)) {
+        ImGui::Indent();
+        ParameterGUI::draw(&sliceBasis0);
+        ParameterGUI::draw(&sliceBasis1);
+        ParameterGUI::draw(&sliceBasis2);
+        ParameterGUI::draw(&sliceBasis3);
+        ImGui::Unindent();
+      }
 
-    ImGui::InputText("filePath", filePath, IM_ARRAYSIZE(filePath));
-    if (ImGui::IsItemActive()) {
-      navControl.active(false);
-    } else {
-      navControl.active(true);
-    }
-    ImGui::InputText("fileName", fileName, IM_ARRAYSIZE(fileName));
-    if (ImGui::IsItemActive()) {
-      navControl.active(false);
-    } else {
-      navControl.active(true);
-    }
+      ParameterGUI::draw(&resetUnitCell);
 
-    ParameterGUI::draw(&exportTxt);
-    ImGui::SameLine();
-    ParameterGUI::draw(&exportJson);
+      ImGui::NewLine();
 
-    if (ImGui::CollapsingHeader("Presets",
-                                ImGuiTreeNodeFlags_CollapsingHeader)) {
-      ImGui::Indent();
-
-      std::map<int, std::string> savedPresets = presets.availablePresets();
-      static int itemCurrent = 1;
-      int lastItem = itemCurrent;
-      ImGui::ListBox("presets", &itemCurrent, PresetMapToTextList,
-                     (void *)&savedPresets, savedPresets.size());
-
-      if (lastItem != itemCurrent &&
-          savedPresets.find(itemCurrent) != savedPresets.end())
-        strcpy(presetName, savedPresets.at(itemCurrent).c_str());
-
-      ImGui::InputText("preset name", presetName, IM_ARRAYSIZE(presetName));
+      ImGui::InputText("filePath", filePath, IM_ARRAYSIZE(filePath));
       if (ImGui::IsItemActive()) {
         navControl.active(false);
       } else {
         navControl.active(true);
       }
-      ParameterGUI::draw(&savePreset);
+      ImGui::InputText("fileName", fileName, IM_ARRAYSIZE(fileName));
+      if (ImGui::IsItemActive()) {
+        navControl.active(false);
+      } else {
+        navControl.active(true);
+      }
+
+      ParameterGUI::draw(&exportTxt);
       ImGui::SameLine();
-      ParameterGUI::draw(&loadPreset);
-      ImGui::Unindent();
-    }
+      ParameterGUI::draw(&exportJson);
 
-    for (auto &info : nodeInfo) {
-      ImGui::Text(info.c_str());
-    }
+      if (ImGui::CollapsingHeader("Presets",
+                                  ImGuiTreeNodeFlags_CollapsingHeader)) {
+        ImGui::Indent();
 
-    for (auto &info : unitCellInfo) {
-      ImGui::Text(info.c_str());
-    }
+        std::map<int, std::string> savedPresets = presets.availablePresets();
+        static int itemCurrent = 1;
+        int lastItem = itemCurrent;
+        ImGui::ListBox("presets", &itemCurrent, PresetMapToTextList,
+                       (void *)&savedPresets, savedPresets.size());
 
-    ImGui::Text("%d", cornerNode0.get());
-    ImGui::Text("%d", cornerNode1.get());
-    ImGui::Text("%d", cornerNode2.get());
-    ImGui::Text("%d", cornerNode3.get());
+        if (lastItem != itemCurrent &&
+            savedPresets.find(itemCurrent) != savedPresets.end())
+          strcpy(presetName, savedPresets.at(itemCurrent).c_str());
+
+        ImGui::InputText("preset name", presetName, IM_ARRAYSIZE(presetName));
+        if (ImGui::IsItemActive()) {
+          navControl.active(false);
+        } else {
+          navControl.active(true);
+        }
+        ParameterGUI::draw(&savePreset);
+        ImGui::SameLine();
+        ParameterGUI::draw(&loadPreset);
+        ImGui::Unindent();
+      }
+    }
 
     ImGui::End();
+
+    // show node/unitCell info on a popup
+    if (showInfo) {
+      if (ImGui::Begin("Information", &showInfo)) {
+        for (auto &info : nodeInfo) {
+          ImGui::Text(info.c_str());
+        }
+
+        for (auto &info : unitCellInfo) {
+          ImGui::Text(info.c_str());
+        }
+
+        ImGui::Text("%d", cornerNode0.get());
+        ImGui::Text("%d", cornerNode1.get());
+        ImGui::Text("%d", cornerNode2.get());
+        ImGui::Text("%d", cornerNode3.get());
+      }
+
+      ImGui::End();
+    }
   }
 
   void watchFile(std::string path) {
@@ -811,6 +824,8 @@ private:
   Trigger savePreset{"savePreset", ""};
   Trigger loadPreset{"loadPreset", ""};
 
+  Trigger openInfo{"openInfo", ""};
+  bool showInfo{false};
   std::array<std::string, 4> nodeInfo;
   std::array<std::string, 5> unitCellInfo;
 };

@@ -35,8 +35,8 @@ struct AbstractSlice {
   virtual void updateNodes() = 0;
   virtual bool updatePickables(std::array<std::string, 4> &nodeInfo,
                                bool modifyUnitCell) = 0;
-  virtual void updateReport(std::array<std::string, 5> &unitCellInfo,
-                            Vec4i &cornerNodes) = 0;
+  virtual void updateUnitCellInfo(std::array<std::string, 5> &unitCellInfo,
+                                  Vec4i &cornerNodes) = 0;
 
   virtual void setMiller(Vec5f &value, unsigned int millerNum) = 0;
   virtual void roundMiller() = 0;
@@ -379,8 +379,8 @@ template <int N, int M> struct Slice : AbstractSlice {
     shouldUploadVertices = true;
   }
 
-  virtual void updateReport(std::array<std::string, 5> &unitCellInfo,
-                            Vec4i &cornerNodes) {
+  virtual void updateUnitCellInfo(std::array<std::string, 5> &unitCellInfo,
+                                  Vec4i &cornerNodes) {
     for (auto &info : unitCellInfo) {
       info = "";
     }
