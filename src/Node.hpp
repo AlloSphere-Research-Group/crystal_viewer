@@ -85,6 +85,7 @@ struct UnitCell {
     if (clearAll) {
       cornerNodes.clear();
     }
+    unitBasis.clear();
     unitCellNodes.clear();
     unitCellMesh.reset();
     unitCellMesh.update();

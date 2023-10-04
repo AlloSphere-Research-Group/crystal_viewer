@@ -37,7 +37,8 @@ struct AbstractSlice {
                                bool modifyUnitCell) = 0;
   virtual void updateUnitCellInfo(std::array<std::string, 5> &unitCellInfo,
                                   Vec4i &cornerNodes) = 0;
-
+  virtual void updateNodeInfo(std::array<std::string, 4> &nodeInfo,
+                              CrystalNode *node = nullptr) = 0;
   virtual void setMiller(Vec5f &value, unsigned int millerNum) = 0;
   virtual void roundMiller() = 0;
   virtual void resetMiller() = 0;
@@ -302,23 +303,16 @@ template <int N, int M> struct Slice : AbstractSlice {
 
       if (pickable.selected.get() && pickable.hover.get()) {
         if (!modifyUnitCell) {
-          nodeInfo[0] = "Node: " + std::to_string(node.id);
-          nodeInfo[1] = " overlap: " + std::to_string(node.overlap);
-          nodeInfo[2] = " env: " + std::to_string(node.environment);
-          nodeInfo[3] =
-              " neighbours: " + std::to_string(node.neighbours.size());
+          updateNodeInfo(nodeInfo, &node);
           return false;
         }
 
         if (unitCell.hasPoint(&node)) {
           pickable.selected = false;
-
           updateUnitCell();
-
           return true;
         } else if (unitCell.addNode(&node, sliceDim)) {
           updateUnitCell();
-
           return true;
         }
 
@@ -395,6 +389,20 @@ template <int N, int M> struct Slice : AbstractSlice {
     cornerNodes.set(-1);
     for (int i = 0; i < unitCell.cornerNodes.size(); ++i) {
       cornerNodes[i] = unitCell.cornerNodes[i]->id;
+    }
+  }
+
+  virtual void updateNodeInfo(std::array<std::string, 4> &nodeInfo,
+                              CrystalNode *node = nullptr) {
+    nodeInfo[0] = "Node: ";
+    nodeInfo[1] = " overlap: ";
+    nodeInfo[2] = " env: ";
+    nodeInfo[3] = " neighbours: ";
+    if (node) {
+      nodeInfo[0] += std::to_string(node->id);
+      nodeInfo[1] += std::to_string(node->overlap);
+      nodeInfo[2] += std::to_string(node->environment);
+      nodeInfo[3] += std::to_string(node->neighbours.size());
     }
   }
 

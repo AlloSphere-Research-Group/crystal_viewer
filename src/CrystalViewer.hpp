@@ -181,11 +181,24 @@ public:
     lattice->pollUpdate();     // update if needs update
     if (slice->pollUpdate()) { // update if needs update
       updateSliceBasis();
+      slice->updateNodeInfo(nodeInfo);
+      slice->updateUnitCellInfo(unitCellInfo, cornerNodes);
+      if (!loadUnitCell) {
+        cornerNode0.setNoCalls(cornerNodes[0]);
+        cornerNode1.setNoCalls(cornerNodes[1]);
+        cornerNode2.setNoCalls(cornerNodes[2]);
+        cornerNode3.setNoCalls(cornerNodes[3]);
+      }
     }
 
     if (loadUnitCell) {
       slice->loadUnitCell(cornerNode0.get(), cornerNode1.get(),
                           cornerNode2.get(), cornerNode3.get());
+      slice->updateUnitCellInfo(unitCellInfo, cornerNodes);
+      cornerNode0.setNoCalls(cornerNodes[0]);
+      cornerNode1.setNoCalls(cornerNodes[1]);
+      cornerNode2.setNoCalls(cornerNodes[2]);
+      cornerNode3.setNoCalls(cornerNodes[3]);
       loadUnitCell = false;
       showInfo = true;
     }
@@ -264,10 +277,10 @@ public:
   void updatePickables(bool modifyUnitCell) {
     if (slice->updatePickables(nodeInfo, modifyUnitCell)) {
       slice->updateUnitCellInfo(unitCellInfo, cornerNodes);
-      cornerNode0.set(cornerNodes[0]);
-      cornerNode1.set(cornerNodes[1]);
-      cornerNode2.set(cornerNodes[2]);
-      cornerNode3.set(cornerNodes[3]);
+      cornerNode0.setNoCalls(cornerNodes[0]);
+      cornerNode1.setNoCalls(cornerNodes[1]);
+      cornerNode2.setNoCalls(cornerNodes[2]);
+      cornerNode3.setNoCalls(cornerNodes[3]);
     }
   }
 
